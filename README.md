@@ -1,16 +1,34 @@
-# React + Vite
+# Library Management Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This is the React + Vite frontend application for **StudySpace (Sunrise Reading Room)**.
 
-Currently, two official plugins are available:
+## Tech Stack
+- **Framework**: React (Functional components, Hooks)
+- **Build Tool**: Vite
+- **Styling**: Vanilla CSS (Pixel-perfect conversion from the design prototype)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Getting Started
 
-## React Compiler
+### Prerequisites
+- Node.js (v16+)
+- npm (v7+)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Installation
+Install the project dependencies:
+```bash
+npm install
+```
 
-## Expanding the Oxlint configuration
+### Running Locally
+To launch the development server:
+```bash
+npm run dev
+```
+The application will default to port `5173` (or the next available port).
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+### Building for Production
+To build the project for production:
+```bash
+npm run build
+```
+The production bundle will be generated under the `dist` directory.
