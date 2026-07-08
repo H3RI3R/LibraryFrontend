@@ -117,7 +117,7 @@ export default function App() {
 
   // Fetch plans from backend on wizard activation
   useEffect(() => {
-    if (currentScreen === 'onboarding') {
+    if (location.pathname === '/onboarding') {
       fetch(`${API_BASE_URL}/api/plans`)
         .then(res => res.json())
         .then(data => {
@@ -138,11 +138,11 @@ export default function App() {
           setSelectedPlanId(1);
         });
     }
-  }, [currentScreen]);
+  }, [location.pathname]);
 
   // Load students from backend when dashboard is loaded
   useEffect(() => {
-    if (currentScreen === 'app-shell') {
+    if (location.pathname === '/dashboard') {
       const token = localStorage.getItem('token');
       if (token) {
         fetch(`${API_BASE_URL}/api/student/all`, {
@@ -179,7 +179,7 @@ export default function App() {
           .catch(err => console.error("Error fetching students:", err));
       }
     }
-  }, [currentScreen, totalSeats]);
+  }, [location.pathname, totalSeats]);
 
   // --- Students Caching ---
   const [studentsList, setStudentsList] = useState([]);
