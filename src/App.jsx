@@ -286,7 +286,7 @@ export default function App() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': obVerificationToken
+        'Authorization': `Bearer ${obVerificationToken}`
       },
       body: JSON.stringify({ otp: parseInt(obOtpValue, 10) })
     })
@@ -618,7 +618,7 @@ export default function App() {
                       </div>
                       <div className="field">
                         <label>Email address</label>
-                        <input type="email" placeholder="you@library.in" value={obOwnerEmail} onChange={(e) => setObOwnerEmail(e.target.value)} required />
+                        <input type="email" placeholder="you@library.in" value={obOwnerEmail} onChange={(e) => setObOwnerEmail(e.target.value)} required disabled={obEmailVerified} />
                         {isEmailValid && !obEmailVerified && (
                           <button type="button" className="btn btn-ghost" style={{ marginTop: '8px', padding: '6px 12px' }} onClick={handleSendOnboardingOtp}>
                             Verify Email
@@ -754,7 +754,11 @@ export default function App() {
                     <div className="ob-step-sub">Pick the plan that fits your library. You can upgrade or downgrade anytime from Settings.</div>
                     
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0' }}>
-                      {plansList.map(plan => (
+                      {((plansList && plansList.length > 0) ? plansList : [
+                        { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
+                        { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
+                        { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
+                      ]).map(plan => (
                         <div
                           key={plan.id}
                           onClick={() => setSelectedPlanId(plan.id)}
