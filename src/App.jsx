@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Toast from './components/Toast';
 import PayNowModal from './components/PayNowModal';
 import AddStudentModal from './components/AddStudentModal';
@@ -44,9 +45,9 @@ const initialStudents = [
 ];
 
 export default function App() {
-  // --- Screen Navigation ---
-  // Screens: 'login', 'onboarding', 'app-shell', 'student-shell'
-  const [currentScreen, setCurrentScreen] = useState('login');
+  // --- Routing Navigation ---
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // --- Login State ---
   const [loginRole, setLoginRole] = useState('owner'); // 'owner' or 'student'
@@ -266,12 +267,12 @@ export default function App() {
                 setLibraryCity(resData.data.library.city);
                 setTotalSeats(resData.data.library.totalSeats);
               }
-              setCurrentScreen('app-shell');
+              navigate('/dashboard');
               showToast('Logged in successfully.');
             })
             .catch(err => {
               console.error("Error verifying trial status:", err);
-              setCurrentScreen('app-shell');
+              navigate('/dashboard');
             });
         } else {
           showToast(`Login failed: ${loginData.message}`);
@@ -295,7 +296,7 @@ export default function App() {
     }
     localStorage.removeItem('token');
     localStorage.removeItem('role');
-    setCurrentScreen('login');
+    navigate('/login');
     setLoginRole('owner');
     setStudentLoginStep(1);
     showToast('Logged out successfully.');
@@ -307,7 +308,7 @@ export default function App() {
   };
 
   const handleVerifyStudentOtp = () => {
-    setCurrentScreen('student-shell');
+    navigate('/student');
     showToast('Welcome back, <b>Anjali</b>!');
   };
 
@@ -481,11 +482,11 @@ export default function App() {
           setIsTrialExpired(false);
           
           if (data.role === 'ADMIN') {
-            setCurrentScreen('app-shell');
+            navigate('/dashboard');
           } else if (data.role === 'STUDENT') {
-            setCurrentScreen('student-shell');
+            navigate('/student');
           } else {
-            setCurrentScreen('app-shell');
+            navigate('/dashboard');
           }
           setObStep(1);
           showToast(`Welcome, <b>${obOwnerName.split(' ')[0]}</b>! ${obLibName} is ready.`);
@@ -641,9 +642,9 @@ export default function App() {
       {/* ============ TOAST ============ */}
       <Toast message={toastMessage} visible={toastVisible} />
 
-      {/* ============ LOGIN SCREEN ============ */}
-      {currentScreen === 'login' && (
-        <div id="login-screen">
+      <Routes>
+        <Route path="/login" element={
+          <div id="login-screen">
           <div className="login-brand">
             <div className="login-brand-top">
               <div className="brand">
@@ -705,9 +706,9 @@ export default function App() {
                   </form>
 
                   <div className="login-divider">or</div>
-                  <button className="btn btn-ghost login-btn" onClick={() => setCurrentScreen('app-shell')}>Send OTP instead</button>
+                  <button className="btn btn-ghost login-btn" onClick={() => navigate('/dashboard')}>Send OTP instead</button>
                   <div className="login-note" style={{ marginTop: '20px' }}>
-                    New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); setCurrentScreen('onboarding'); }}>Set up your account</a>
+                    New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
                   </div>
                 </div>
               )}
@@ -770,12 +771,11 @@ export default function App() {
               )}
             </div>
           </div>
-        </div>
-      )}
+          </div>
+        } />
 
-      {/* ============ ONBOARDING WIZARD ============ */}
-      {currentScreen === 'onboarding' && (
-        <div id="onboarding-screen" className="open">
+        <Route path="/onboarding" element={
+          <div id="onboarding-screen" className="open">
           <div className="onboarding-top">
             <div className="brand">
               <div className="brand-mark">S</div>
@@ -784,7 +784,7 @@ export default function App() {
                 <div className="brand-sub">Set up your library</div>
               </div>
             </div>
-            <a href="#" id="back-to-login" onClick={(e) => { e.preventDefault(); setCurrentScreen('login'); }}>Already have an account? Log in</a>
+            <a href="#" id="back-to-login" onClick={(e) => { e.preventDefault(); navigate('/login'); }}>Already have an account? Log in</a>
           </div>
 
           <div className="onboarding-wrap">
@@ -1022,15 +1022,14 @@ export default function App() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </div>
+        } />
 
-      {/* ============ OWNER APP SHELL ============ */}
-      {currentScreen === 'app-shell' && (
-        <div className="app">
+        <Route path="/dashboard" element={
+          <div className="app">
           {/* ============ SIDEBAR ============ */}
           <nav className="sidebar">
-            <div className="brand" onClick={() => setCurrentScreen('login')} style={{ cursor: 'pointer' }}>
+            <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
               <div className="brand-mark">S</div>
               <div>
                 <div className="brand-name">StudySpace</div>
@@ -1558,14 +1557,13 @@ export default function App() {
             )}
 
           </main>
-        </div>
-      )}
+          </div>
+        } />
 
-      {/* ============ STUDENT PORTAL SHELL ============ */}
-      {currentScreen === 'student-shell' && (
-        <div className="student-shell">
+        <Route path="/student" element={
+          <div className="student-shell">
           <header className="student-header">
-            <div className="brand" onClick={() => setCurrentScreen('login')} style={{ cursor: 'pointer' }}>
+            <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
               <div className="brand-mark">S</div>
               <div>
                 <div className="brand-name" style={{ color: 'var(--ink)' }}>StudySpace</div>
@@ -1685,8 +1683,10 @@ export default function App() {
               </section>
             )}
           </main>
-        </div>
-      )}
+          </div>
+        } />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
 
       {/* ============ MODALS ============ */}
       <PayNowModal
