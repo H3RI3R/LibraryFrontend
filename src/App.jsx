@@ -6,7 +6,7 @@ import AddStudentModal from './components/AddStudentModal';
 
 // --- Default Data & Helper Functions ---
 const names = ["Priya S.", "Rohit K.", "Anjali V.", "Kavya N.", "Sahil M.", "Neha J.", "Aman G.", "Vikram R.", "Divya P.", "Karan S.", "Meera T.", "Yash B."];
-const API_BASE_URL = 'http://localhost:5007';
+const API_BASE_URL = 'https://test.edu2all.in/library';
 
 function buildSeats(count) {
   const seats = [];
