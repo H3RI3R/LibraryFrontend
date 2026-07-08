@@ -139,8 +139,49 @@ export default function App() {
     }
   }, [currentScreen]);
 
+  // Load students from backend when dashboard is loaded
+  useEffect(() => {
+    if (currentScreen === 'app-shell') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        fetch(`${API_BASE_URL}/api/student/all`, {
+          headers: {
+            'Authorization': token
+          }
+        })
+          .then(res => res.json())
+          .then(resData => {
+            if (resData.success && Array.isArray(resData.data)) {
+              const mapped = resData.data.map(s => ({
+                id: s.id,
+                name: s.studentName,
+                mobile: s.mobileNumber,
+                shift: s.shift,
+                seat: s.assignedSeat,
+                joined: s.joiningDate ? new Date(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+                status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
+              }));
+              setStudentsList(mapped);
+
+              // Update the fullSeats map based on occupied seats of active students
+              const updatedSeats = buildEmptySeats(totalSeats);
+              const finalSeats = updatedSeats.map(seat => {
+                const foundStudent = mapped.find(st => st.seat === seat.label);
+                if (foundStudent) {
+                  return { ...seat, status: 'occupied', student: foundStudent.name };
+                }
+                return seat;
+              });
+              setFullSeats(finalSeats);
+            }
+          })
+          .catch(err => console.error("Error fetching students:", err));
+      }
+    }
+  }, [currentScreen, totalSeats]);
+
   // --- Students Caching ---
-  const [studentsList, setStudentsList] = useState(initialStudents);
+  const [studentsList, setStudentsList] = useState([]);
   const [studentSearch, setStudentSearch] = useState('');
 
   // --- Owner Dashboard views navigation ---
@@ -244,29 +285,65 @@ export default function App() {
   };
 
   const handleAddStudentSubmit = (studentData) => {
-    const formattedJoined = new Date(studentData.joinedRaw).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    
-    // Add to students list
-    const newStudent = {
-      name: studentData.name,
-      mobile: studentData.mobile,
-      shift: studentData.shift,
-      seat: studentData.seat,
-      joined: formattedJoined,
-      status: studentData.status
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('Session expired. Please log in again.');
+      return;
+    }
+
+    const payload = {
+      studentName: studentData.name,
+      mobileNumber: studentData.mobile,
+      parentName: studentData.parentName || 'Parent Name',
+      parentMobile: studentData.parentMobile || '9999999999',
+      address: studentData.address || 'Address',
+      joiningDate: studentData.joinedRaw || new Date().toISOString().split('T')[0],
+      assignedSeat: studentData.seat,
+      shift: studentData.shift === 'Full day' ? 'FULL_DAY' : studentData.shift.toUpperCase(),
+      membershipStatus: studentData.status ? studentData.status.toUpperCase() : 'ACTIVE'
     };
-    setStudentsList([newStudent, ...studentsList]);
 
-    // Update Seat Status
-    setFullSeats(fullSeats.map(s => {
-      if (s.label === studentData.seat) {
-        return { ...s, status: 'occupied', student: studentData.name };
-      }
-      return s;
-    }));
+    fetch(`${API_BASE_URL}/api/student`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token
+      },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.success) {
+          const s = resData.data;
+          const newStudent = {
+            id: s.id,
+            name: s.studentName,
+            mobile: s.mobileNumber,
+            shift: s.shift,
+            seat: s.assignedSeat,
+            joined: s.joiningDate ? new Date(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+            status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
+          };
+          setStudentsList([newStudent, ...studentsList]);
 
-    setAddStudentOpen(false);
-    showToast(`<b>${studentData.name}</b> registered — seat ${studentData.seat}, ${studentData.shift} shift.`);
+          // Update Seat Status
+          setFullSeats(fullSeats.map(seat => {
+            if (seat.label === studentData.seat) {
+              return { ...seat, status: 'occupied', student: studentData.name };
+            }
+            return seat;
+          }));
+
+          setAddStudentOpen(false);
+          showToast(`<b>${studentData.name}</b> registered — seat ${studentData.seat}, ${studentData.shift} shift.`);
+        } else {
+          showToast(`Failed to register student: ${resData.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("Error adding student:", err);
+        showToast('Error registering student.');
+      });
   };
 
   // --- Email Verification Flow in Onboarding Wizard ---
