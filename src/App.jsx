@@ -5,6 +5,7 @@ import AddStudentModal from './components/AddStudentModal';
 
 // --- Default Data & Helper Functions ---
 const names = ["Priya S.", "Rohit K.", "Anjali V.", "Kavya N.", "Sahil M.", "Neha J.", "Aman G.", "Vikram R.", "Divya P.", "Karan S.", "Meera T.", "Yash B."];
+const API_BASE_URL = 'http://localhost:5007';
 
 function buildSeats(count) {
   const seats = [];
@@ -58,28 +59,37 @@ export default function App() {
   const [studentLoginStep, setStudentLoginStep] = useState(1); // 1: mobile input, 2: OTP input
   const [otpInputs, setOtpInputs] = useState(['4', '2', '8', '1', '9', '5']);
 
-  // --- Onboarding Wizard State ---
+  // --- Onboarding Wizard State (Persistent when moving back/forth) ---
   const [obStep, setObStep] = useState(1);
-  const [obOwnerName, setObOwnerName] = useState('');
-  const [obOwnerMobile, setObOwnerMobile] = useState('');
-  const [obOwnerEmail, setObOwnerEmail] = useState('');
-  const [obOwnerPassword, setObOwnerPassword] = useState('');
-  const [obOwnerPassword2, setObOwnerPassword2] = useState('');
-  const [obLibName, setObLibName] = useState('');
-  const [obLibCity, setObLibCity] = useState('');
-  const [obLibState, setObLibState] = useState('');
-  const [obLibAddress, setObLibAddress] = useState('');
+  const [obOwnerName, setObOwnerName] = useState('Ritik Soni');
+  const [obOwnerMobile, setObOwnerMobile] = useState('08890846567');
+  const [obOwnerEmail, setObOwnerEmail] = useState('staff@gmail.com');
+  const [obOwnerPassword, setObOwnerPassword] = useState('123456');
+  const [obOwnerPassword2, setObOwnerPassword2] = useState('123456');
+  const [obLibName, setObLibName] = useState('Sunrise Reading Room');
+  const [obLibCity, setObLibCity] = useState('Sector 12, Dadri');
+  const [obLibState, setObLibState] = useState('Uttar Pradesh');
+  const [obLibAddress, setObLibAddress] = useState('Building, street, landmark');
   const [obShifts, setObShifts] = useState({ Morning: true, Evening: true, 'Full day': false });
   const [obTotalSeats, setObTotalSeats] = useState(60);
   const [obFeeAmount, setObFeeAmount] = useState(800);
   const [obDueDay, setObDueDay] = useState(5);
   const [obPayMethods, setObPayMethods] = useState({ Cash: true, UPI: true, 'Bank Transfer': false });
 
+  // Onboarding verification states
+  const [obEmailVerified, setObEmailVerified] = useState(false);
+  const [obOtpSent, setObOtpSent] = useState(false);
+  const [obOtpValue, setObOtpValue] = useState('');
+  const [obVerificationToken, setObVerificationToken] = useState('');
+  const [plansList, setPlansList] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState(null);
+
   // --- Global Library Configuration & State ---
   const [libraryName, setLibraryName] = useState('Sunrise Reading Room');
   const [libraryCity, setLibraryCity] = useState('Sector 12, Dadri');
   const [ownerName, setOwnerName] = useState('Ritik');
   const [totalSeats, setTotalSeats] = useState(120);
+  const [isTrialExpired, setIsTrialExpired] = useState(false);
 
   // --- Seats Caching ---
   const [dashSeats, setDashSeats] = useState([]);
@@ -94,6 +104,31 @@ export default function App() {
     setDashSeats(buildSeats(36));
     setFullSeats(buildSeats(120));
   }, []);
+
+  // Fetch plans from backend on wizard activation
+  useEffect(() => {
+    if (currentScreen === 'onboarding') {
+      fetch(`${API_BASE_URL}/api/plans`)
+        .then(res => res.json())
+        .then(data => {
+          setPlansList(data);
+          if (data && data.length > 0) {
+            setSelectedPlanId(data[0].id);
+          }
+        })
+        .catch(err => {
+          console.error("Error loading plans:", err);
+          // Fallback static list
+          const fallback = [
+            { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
+            { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
+            { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
+          ];
+          setPlansList(fallback);
+          setSelectedPlanId(1);
+        });
+    }
+  }, [currentScreen]);
 
   // --- Students Caching ---
   const [studentsList, setStudentsList] = useState(initialStudents);
@@ -153,7 +188,23 @@ export default function App() {
   // --- Actions ---
   const handleOwnerLogin = (e) => {
     e.preventDefault();
-    setCurrentScreen('app-shell');
+    const emailToCheck = loginTab === 'email' ? ownerEmail : ownerMobile;
+    // Check trial expiration status
+    fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === 'success') {
+          setIsTrialExpired(resData.data.isExpired);
+          setLibraryName(resData.data.library.name);
+          setLibraryCity(resData.data.library.city);
+          setTotalSeats(resData.data.library.totalSeats);
+        }
+        setCurrentScreen('app-shell');
+      })
+      .catch(err => {
+        console.error("Error verifying trial status:", err);
+        setCurrentScreen('app-shell');
+      });
   };
 
   const handleSendStudentOtp = () => {
@@ -209,16 +260,140 @@ export default function App() {
     showToast(`<b>${studentData.name}</b> registered — seat ${studentData.seat}, ${studentData.shift} shift.`);
   };
 
+  // --- Email Verification Flow in Onboarding Wizard ---
+  const handleSendOnboardingOtp = () => {
+    fetch(`${API_BASE_URL}/signup/send-otp?email=${encodeURIComponent(obOwnerEmail)}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setObVerificationToken(data.token);
+          setObOtpSent(true);
+          showToast('Verification OTP sent successfully!');
+        } else {
+          showToast(`Error: ${data.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("API error:", err);
+        showToast('Failed to connect to send-otp API.');
+      });
+  };
+
+  const handleVerifyOnboardingOtp = () => {
+    fetch(`${API_BASE_URL}/signup/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': obVerificationToken
+      },
+      body: JSON.stringify({ otp: parseInt(obOtpValue, 10) })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setObEmailVerified(true);
+          showToast('Email verified successfully!');
+        } else {
+          showToast(`Verification Failed: ${data.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("API error:", err);
+        showToast('Failed to connect to verify-otp API.');
+      });
+  };
+
+  // Onboarding registration submission
+  const handleOnboardingRegisterSubmit = (isSkipTrial) => {
+    const payload = {
+      fullName: obOwnerName,
+      mobileNumber: obOwnerMobile,
+      email: obOwnerEmail,
+      password: obOwnerPassword,
+      libraryName: obLibName,
+      city: obLibCity,
+      state: obLibState,
+      address: obLibAddress,
+      shifts: Object.keys(obShifts).filter(k => obShifts[k]).join(','),
+      totalSeats: obTotalSeats,
+      monthlyFee: obFeeAmount,
+      dueDay: obDueDay,
+      paymentMethods: Object.keys(obPayMethods).filter(k => obPayMethods[k]).join(','),
+      planId: isSkipTrial ? 0 : selectedPlanId,
+      isFreeTrial: isSkipTrial
+    };
+
+    fetch(`${API_BASE_URL}/signup/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setOwnerName(obOwnerName.trim());
+          setLibraryName(obLibName.trim());
+          setLibraryCity(obLibCity.trim());
+          setTotalSeats(obTotalSeats);
+
+          // Reset seat maps matching configured total
+          setFullSeats(buildEmptySeats(obTotalSeats));
+          setDashSeats(buildEmptySeats(Math.min(36, obTotalSeats)));
+          
+          setStudentsList([]);
+          setActivityFeed([]);
+          setIsTrialExpired(false);
+          
+          setCurrentScreen('app-shell');
+          setObStep(1);
+          showToast(`Welcome, <b>${obOwnerName.split(' ')[0]}</b>! ${obLibName} is ready.`);
+        } else {
+          showToast(`Registration failed: ${data.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("API error:", err);
+        showToast('Failed to connect to register API.');
+      });
+  };
+
+  const handleUpgradeAccount = (planId) => {
+    fetch(`${API_BASE_URL}/signup/upgrade?email=${encodeURIComponent(ownerEmail || ownerMobile)}&planId=${planId}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setIsTrialExpired(false);
+          showToast('Account upgraded successfully! Dashboard activated.');
+        } else {
+          showToast(`Upgrade failed: ${data.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("API error:", err);
+        showToast('Failed to connect to upgrade API.');
+      });
+  };
+
   // --- Onboarding Logic ---
   const handleObNext = () => {
     // Validate current step
     if (obStep === 1) {
-      if (!obOwnerName.trim() || !obOwnerMobile.trim() || !obOwnerPassword) {
-        showToast('Please fill in your name, mobile number and a password.');
+      if (!obOwnerName.trim() || !obOwnerPassword) {
+        showToast('Please fill in your name and a password.');
         return;
       }
       if (obOwnerPassword !== obOwnerPassword2) {
         showToast('Passwords do not match — please re-check.');
+        return;
+      }
+      if (!obEmailVerified) {
+        showToast('Please verify your email address first.');
         return;
       }
     }
@@ -241,24 +416,6 @@ export default function App() {
 
     if (obStep < 4) {
       setObStep(obStep + 1);
-    } else {
-      // Finish onboarding
-      setOwnerName(obOwnerName.trim());
-      setLibraryName(obLibName.trim());
-      setLibraryCity(obLibCity.trim());
-      setTotalSeats(obTotalSeats);
-
-      // Reset seat map to fully vacant matching configured total
-      setFullSeats(buildEmptySeats(obTotalSeats));
-      setDashSeats(buildEmptySeats(Math.min(36, obTotalSeats)));
-      
-      // Reset variables to blank/zero values for a fresh account
-      setStudentsList([]);
-      setActivityFeed([]);
-      
-      setCurrentScreen('app-shell');
-      setObStep(1);
-      showToast(`Welcome, <b>${obOwnerName.split(' ')[0]}</b>! ${obLibName} is ready — add your first student to get started.`);
     }
   };
 
@@ -273,6 +430,8 @@ export default function App() {
     s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
     s.mobile.replace(/\s/g, '').includes(studentSearch.replace(/\s/g, ''))
   );
+
+  const isEmailValid = obOwnerEmail.includes('@') && obOwnerEmail.includes('.');
 
   return (
     <React.Fragment>
@@ -440,8 +599,8 @@ export default function App() {
                   <div className="ob-step-circle">3</div><div className="ob-step-label">Seats &amp; fees</div>
                 </div>
                 <div className={`ob-step-line ${obStep > 3 ? 'done' : ''}`}></div>
-                <div className={`ob-step-item ${obStep === 4 ? 'active' : ''}`}>
-                  <div className="ob-step-circle">4</div><div className="ob-step-label">Done</div>
+                <div className={`ob-step-item ${obStep > 4 ? 'done' : ''} ${obStep === 4 ? 'active' : ''}`}>
+                  <div className="ob-step-circle">4</div><div className="ob-step-label">Plan</div>
                 </div>
               </div>
 
@@ -451,20 +610,37 @@ export default function App() {
                   <div className="ob-step-content active">
                     <div className="ob-step-eyebrow">Step 1 of 4</div>
                     <h2 className="ob-step-title">Create your account</h2>
-                    <div className="ob-step-sub">You'll use this mobile number and password to log in as the library owner.</div>
+                    <div className="ob-step-sub">You'll use this email and password to log in as the library owner.</div>
                     <div className="form-grid">
                       <div className="field span-2">
                         <label>Your full name</label>
                         <input type="text" placeholder="e.g. Ritik Sharma" value={obOwnerName} onChange={(e) => setObOwnerName(e.target.value)} required />
                       </div>
                       <div className="field">
-                        <label>Mobile number</label>
-                        <input type="tel" placeholder="98110 22341" value={obOwnerMobile} onChange={(e) => setObOwnerMobile(e.target.value)} required />
+                        <label>Email address</label>
+                        <input type="email" placeholder="you@library.in" value={obOwnerEmail} onChange={(e) => setObOwnerEmail(e.target.value)} required />
+                        {isEmailValid && !obEmailVerified && (
+                          <button type="button" className="btn btn-ghost" style={{ marginTop: '8px', padding: '6px 12px' }} onClick={handleSendOnboardingOtp}>
+                            Verify Email
+                          </button>
+                        )}
+                        {obEmailVerified && <span style={{ color: 'var(--teal)', fontSize: '12px', display: 'block', marginTop: '6px' }}>✓ Verified</span>}
                       </div>
                       <div className="field">
-                        <label>Email (optional)</label>
-                        <input type="email" placeholder="you@library.in" value={obOwnerEmail} onChange={(e) => setObOwnerEmail(e.target.value)} />
+                        <label>Mobile number (optional)</label>
+                        <input type="tel" placeholder="98110 22341" value={obOwnerMobile} onChange={(e) => setObOwnerMobile(e.target.value)} />
                       </div>
+                      
+                      {obOtpSent && !obEmailVerified && (
+                        <div className="field span-2" style={{ border: '1px dashed var(--rule)', padding: '16px', borderRadius: '8px' }}>
+                          <label>Enter OTP sent to your Email</label>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <input type="text" placeholder="Enter 4-digit OTP" value={obOtpValue} onChange={(e) => setObOtpValue(e.target.value)} />
+                            <button type="button" className="btn btn-primary" onClick={handleVerifyOnboardingOtp}>Verify OTP</button>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="field">
                         <label>Password</label>
                         <input type="password" placeholder="Create a password" value={obOwnerPassword} onChange={(e) => setObOwnerPassword(e.target.value)} required />
@@ -570,32 +746,71 @@ export default function App() {
                   </div>
                 )}
 
-                {/* STEP 4 — Confirmation */}
+                {/* STEP 4 — Choose Plan selection (Step 4 of 4) */}
                 {obStep === 4 && (
                   <div className="ob-step-content active">
-                    <div className="ob-done-wrap">
-                      <div className="ob-done-stamp">SET UP<br />COMPLETE</div>
-                      <h2 className="ob-step-title">You're all set, {obOwnerName.split(' ')[0]}</h2>
-                      <div className="ob-step-sub">Your library register is ready. Here's what we've set up:</div>
+                    <div className="ob-step-eyebrow">Step 4 of 4</div>
+                    <h2 className="ob-step-title">Choose your plan</h2>
+                    <div className="ob-step-sub">Pick the plan that fits your library. You can upgrade or downgrade anytime from Settings.</div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0' }}>
+                      {plansList.map(plan => (
+                        <div
+                          key={plan.id}
+                          onClick={() => setSelectedPlanId(plan.id)}
+                          style={{
+                            border: selectedPlanId === plan.id ? '2px solid var(--teal)' : '1px solid var(--rule)',
+                            background: selectedPlanId === plan.id ? 'var(--teal-tint)' : 'var(--card)',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            position: 'relative'
+                          }}
+                        >
+                          {plan.planName === 'Growth' && (
+                            <span style={{
+                              position: 'absolute',
+                              top: '-12px',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: 'var(--mustard)',
+                              color: 'var(--ink)',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              padding: '2px 8px',
+                              borderRadius: '10px',
+                              textTransform: 'uppercase'
+                            }}>Most Popular</span>
+                          )}
+                          <h3 style={{ margin: '0 0 10px 0', fontFamily: 'var(--display)' }}>{plan.planName}</h3>
+                          <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--ink)', margin: '10px 0' }}>
+                            ₹{plan.monthlyPrice}<span style={{ fontSize: '13px', color: 'var(--muted)' }}>/mo</span>
+                          </div>
+                          <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>{plan.description}</p>
+                        </div>
+                      ))}
                     </div>
-                    <div className="ob-summary">
-                      <div className="ob-summary-row"><span>Library name</span><b>{obLibName || '—'}</b></div>
-                      <div className="ob-summary-row"><span>Location</span><b>{obLibCity || '—'}</b></div>
-                      <div className="ob-summary-row"><span>Total seats</span><b>{obTotalSeats} seats</b></div>
-                      <div className="ob-summary-row"><span>Monthly fee</span><b>₹{Number(obFeeAmount).toLocaleString('en-IN')} / month</b></div>
-                      <div className="ob-summary-row">
-                        <span>Shifts</span>
-                        <b>{Object.keys(obShifts).filter(k => obShifts[k]).join(', ') || 'None'}</b>
-                      </div>
+
+                    <div style={{ background: 'var(--paper-deep)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', margin: '20px 0' }}>
+                      <span>🎁</span>
+                      <span>14-day free trial included — you won't be charged today.</span>
                     </div>
                   </div>
                 )}
 
                 <div className="ob-actions">
                   <button className="btn btn-ghost" style={{ visibility: obStep === 1 ? 'hidden' : 'visible' }} onClick={handleObBack}>Back</button>
-                  <button className="btn btn-primary" onClick={handleObNext}>
-                    {obStep === 4 ? 'Go to dashboard' : (obStep === 3 ? 'Create my library' : 'Continue')}
-                  </button>
+                  {obStep === 4 ? (
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn btn-ghost" onClick={() => handleOnboardingRegisterSubmit(true)}>Skip for Free plan</button>
+                      <button className="btn btn-primary" onClick={() => handleOnboardingRegisterSubmit(false)}>Start trial &amp; activate dashboard →</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-primary" onClick={handleObNext}>
+                      {obStep === 3 ? 'Continue to payment →' : 'Continue'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -659,439 +874,484 @@ export default function App() {
           {/* ============ MAIN CONTENT ============ */}
           <main className="content">
 
-            {/* ================= DASHBOARD ================= */}
-            {activeView === 'dashboard' && (
+            {isTrialExpired ? (
               <section className="view active">
                 <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Saturday, 4 July</div>
-                    <h1 className="page-title">Good morning, {ownerName.split(' ')[0]}</h1>
-                  </div>
-                  <div className="topbar-actions">
-                    <button className="btn btn-ghost" onClick={() => setActiveView('attendance')}>Today's register</button>
-                    <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
-                  </div>
+                  <h1 className="page-title">Please upgrade your account</h1>
                 </div>
-
-                <div className="stat-strip">
-                  <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
-                    <div className="stat-label">Total Seats</div>
-                    <div className="stat-value">{totalSeats}</div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
-                    <div className="stat-label">Occupied</div>
-                    <div className="stat-value">
-                      {occupiedCount} <span className="stat-suffix">/ {totalSeats}</span>
-                    </div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
-                    <div className="stat-label">Total Students</div>
-                    <div className="stat-value">{studentsList.length}</div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
-                    <div className="stat-label">Fees Due</div>
-                    <div className="stat-value">₹{Number(feesDueSum).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--ink)' }}>
-                    <div className="stat-label">Today's Attendance</div>
-                    <div className="stat-value">{studentsList.length > 0 ? 62 : 0}</div>
-                  </div>
-                </div>
-
-                <div className="grid-2">
-                  <div className="panel">
-                    <div className="panel-head">
-                      <h3 className="panel-title">Seat map {obStep === 1 ? '— Morning shift' : ''}</h3>
-                      <span className="panel-link" onClick={() => setActiveView('seats')}>Open full map →</span>
-                    </div>
-                    <div className="seat-legend">
-                      <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
-                      <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
-                      <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
-                    </div>
-                    <div className="seat-grid">
-                      {dashSeats.map((s, idx) => (
-                        <div key={idx} className={`seat ${s.status}`} title={s.student ? `${s.student} — ${s.status}` : 'Available'}>
-                          {s.label}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="panel">
-                    <div className="panel-head"><h3 class="panel-title">Today's activity</h3></div>
-                    <div className="feed">
-                      {activityFeed.length > 0 ? (
-                        activityFeed.map((item, idx) => (
-                          <div className="feed-item" key={idx}>
-                            <div className="feed-time">{item.time}</div>
-                            <div className={`feed-dot ${item.dotColor !== 'teal' ? item.dotColor : ''}`}></div>
-                            <div className="feed-text" dangerouslySetInnerHTML={{ __html: item.text }}></div>
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.6 }}>
-                          No activity yet. Once students check in or pay fees, you'll see it here first.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid-2">
-                  <div className="panel">
-                    <div className="panel-head"><h3 class="panel-title">Monthly revenue</h3></div>
-                    {studentsList.length > 0 ? (
-                      <div className="bars">
-                        <div className="bar-col"><div className="bar" style={{ height: '52%' }}></div><div className="bar-label">Feb</div></div>
-                        <div className="bar-col"><div className="bar" style={{ height: '61%' }}></div><div className="bar-label">Mar</div></div>
-                        <div className="bar-col"><div className="bar" style={{ height: '58%' }}></div><div className="bar-label">Apr</div></div>
-                        <div className="bar-col"><div className="bar" style={{ height: '70%' }}></div><div className="bar-label">May</div></div>
-                        <div className="bar-col"><div className="bar" style={{ height: '66%' }}></div><div className="bar-label">Jun</div></div>
-                        <div className="bar-col"><div className="bar current" style={{ height: '81%' }}></div><div className="bar-label">Jul</div></div>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
-                        Revenue will appear here after your first month of collections.
-                      </div>
-                    )}
-                  </div>
-                  <div className="panel">
-                    <div className="panel-head">
-                      <h3 className="panel-title">Due fees</h3>
-                      <span className="panel-link" onClick={() => setActiveView('fees')}>View all →</span>
-                    </div>
-                    {studentsList.length > 0 ? (
-                      <table className="ledger">
-                        <tbody>
-                          <tr><td className="cell-name">Sahil Mehta</td><td className="cell-amount">₹1,200</td><td><span className="stamp due">Due</span></td></tr>
-                          <tr><td className="cell-name">Neha Joshi</td><td className="cell-amount">₹800</td><td><span className="stamp due">Due</span></td></tr>
-                          <tr><td className="cell-name">Aman Gupta</td><td className="cell-amount">₹1,500</td><td><span className="stamp due">Due</span></td></tr>
-                        </tbody>
-                      </table>
-                    ) : (
-                      <table className="ledger">
-                        <tbody>
-                          <tr>
-                            <td style={{ color: 'var(--muted)', fontSize: '13px', padding: '14px 10px' }}>
-                              No dues yet — nothing to collect until your first student joins.
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {/* ================= STUDENTS ================= */}
-            {activeView === 'students' && (
-              <section className="view active">
-                <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Register</div>
-                    <h1 className="page-title">Students</h1>
-                  </div>
-                  <div className="topbar-actions">
-                    <div className="search">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-                      <input placeholder="Search by name or mobile" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} />
-                    </div>
-                    <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
-                  </div>
-                </div>
-
-                <div className="panel">
-                  <table className="ledger">
-                    <thead>
-                      <tr><th>Student</th><th>Mobile</th><th>Shift</th><th>Seat</th><th>Joined</th><th>Membership</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {filteredStudents.map((s, idx) => (
-                        <tr key={idx}>
-                          <td className="name-cell">
-                            <span className="avatar">
-                              {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-                            </span>
-                            <span className="cell-name">{s.name}</span>
-                          </td>
-                          <td className="mono">{s.mobile}</td>
-                          <td>{s.shift}</td>
-                          <td>{s.seat}</td>
-                          <td>{s.joined}</td>
-                          <td>
-                            <span className={`pill ${s.status}`}>
-                              {s.status === 'active' ? 'Active' : 'Inactive'}
-                            </span>
-                          </td>
-                          <td><span className="panel-link">View</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="note">
-                  Showing <span>{filteredStudents.length}</span> of {studentsList.length} students. Search narrows the list instantly — try “rohit” or “98”.
-                </div>
-              </section>
-            )}
-
-            {/* ================= SEATS ================= */}
-            {activeView === 'seats' && (
-              <section className="view active">
-                <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Floor plan</div>
-                    <h1 className="page-title">Seats</h1>
-                  </div>
-                  <div className="topbar-actions">
-                    <button className="btn btn-ghost">+ Create Seats</button>
-                  </div>
-                </div>
-
-                <div className="toolbar">
-                  <div className="filter-chips">
-                    {['All shifts', 'Morning (7–2)', 'Evening (2–9)', 'Full day'].map((chip) => (
+                <div className="panel" style={{ padding: '30px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '16px', color: 'var(--terracotta)', fontWeight: 'bold' }}>
+                    Your 14-day free trial has expired!
+                  </p>
+                  <p style={{ color: 'var(--muted)', marginBottom: '30px' }}>
+                    To continue using the dashboard features, please choose a subscription plan below to upgrade.
+                  </p>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0', textAlign: 'left' }}>
+                    {[
+                      { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
+                      { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
+                      { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
+                    ].map(plan => (
                       <div
-                        key={chip}
-                        className={`chip ${seatFilter === chip ? 'active' : ''}`}
-                        onClick={() => setSeatFilter(chip)}
+                        key={plan.id}
+                        style={{
+                          border: '1px solid var(--rule)',
+                          background: 'var(--card)',
+                          borderRadius: '12px',
+                          padding: '20px'
+                        }}
                       >
-                        {chip}
+                        <h3 style={{ margin: '0 0 10px 0', fontFamily: 'var(--display)' }}>{plan.planName}</h3>
+                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--ink)', margin: '10px 0' }}>
+                          ₹{plan.monthlyPrice}<span style={{ fontSize: '13px', color: 'var(--muted)' }}>/mo</span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '20px' }}>{plan.description}</p>
+                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => handleUpgradeAccount(plan.id)}>
+                          Upgrade Now
+                        </button>
                       </div>
                     ))}
                   </div>
-                  <div className="seat-legend" style={{ margin: 0 }}>
-                    <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
-                    <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
-                    <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
-                  </div>
                 </div>
-
-                <div className="grid-2" style={{ gridTemplateColumns: '1.7fr 1fr' }}>
-                  <div className="panel">
-                    <div className="seat-grid">
-                      {fullSeats.map((s, idx) => (
-                        <div
-                          key={idx}
-                          className={`seat ${s.status} ${selectedSeatIndex === idx ? 'selected' : ''}`}
-                          title={s.student ? `${s.student} — ${s.status}` : 'Available'}
-                          onClick={() => setSelectedSeatIndex(idx)}
-                        >
-                          {s.label}
-                        </div>
-                      ))}
+              </section>
+            ) : (
+              <React.Fragment>
+                {/* ================= DASHBOARD ================= */}
+                {activeView === 'dashboard' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Saturday, 4 July</div>
+                        <h1 className="page-title">Good morning, {ownerName.split(' ')[0]}</h1>
+                      </div>
+                      <div className="topbar-actions">
+                        <button className="btn btn-ghost" onClick={() => setActiveView('attendance')}>Today's register</button>
+                        <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="panel seat-side">
-                    <div className="panel-head"><h3 className="panel-title">Seat detail</h3></div>
-                    {selectedSeatIndex !== null ? (
-                      fullSeats[selectedSeatIndex].status === 'available' ? (
-                        <div className="seat-detail">
-                          Seat <b>{fullSeats[selectedSeatIndex].label}</b> is available.<br /><br />
-                          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
+
+                    <div className="stat-strip">
+                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
+                        <div className="stat-label">Total Seats</div>
+                        <div className="stat-value">{totalSeats}</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
+                        <div className="stat-label">Occupied</div>
+                        <div className="stat-value">
+                          {occupiedCount} <span className="stat-suffix">/ {totalSeats}</span>
                         </div>
-                      ) : (
-                        <div className="seat-detail filled">
-                          <div className="seat-detail-name">{fullSeats[selectedSeatIndex].student}</div>
-                          <span className={`stamp ${fullSeats[selectedSeatIndex].status === 'due' ? 'due' : 'paid'}`}>
-                            {fullSeats[selectedSeatIndex].status === 'due' ? 'Due' : 'Paid'}
-                          </span>
-                          <div className="seat-detail-row"><span>Seat</span><b>{fullSeats[selectedSeatIndex].label}</b></div>
-                          <div className="seat-detail-row"><span>Shift</span><b>Morning</b></div>
-                          <div className="seat-detail-row"><span>Member since</span><b>Feb 2026</b></div>
-                        </div>
-                      )
-                    ) : (
-                      <div className="seat-detail">Click any seat to view or assign it</div>
-                    )}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {/* ================= FEES ================= */}
-            {activeView === 'fees' && (
-              <section className="view active">
-                <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Ledger</div>
-                    <h1 className="page-title">Fees</h1>
-                  </div>
-                  <div className="topbar-actions">
-                    <button className="btn btn-ghost">Due list</button>
-                    <button className="btn btn-primary">+ Collect Fee</button>
-                  </div>
-                </div>
-
-                <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
-                    <div className="stat-label">Collected this month</div>
-                    <div className="stat-value">₹64,800</div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
-                    <div className="stat-label">Total due</div>
-                    <div className="stat-value">₹12,400</div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
-                    <div className="stat-label">Students overdue</div>
-                    <div className="stat-value">7</div>
-                  </div>
-                </div>
-
-                <div className="panel">
-                  <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
-                  <table className="ledger">
-                    <thead>
-                      <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="name-cell"><span className="avatar">RK</span><span className="cell-name">Rohit Kumar</span></td>
-                        <td className="cell-amount">₹800</td><td>UPI</td><td>03 Jul</td>
-                        <td><span className="stamp paid">Paid</span></td>
-                        <td><span className="panel-link">Receipt</span></td>
-                      </tr>
-                      <tr>
-                        <td className="name-cell"><span className="avatar">PS</span><span className="cell-name">Priya Sharma</span></td>
-                        <td className="cell-amount">₹1,200</td><td>Cash</td><td>02 Jul</td>
-                        <td><span className="stamp paid">Paid</span></td>
-                        <td><span className="panel-link">Receipt</span></td>
-                      </tr>
-                      <tr>
-                        <td className="name-cell"><span className="avatar">SM</span><span className="cell-name">Sahil Mehta</span></td>
-                        <td className="cell-amount">₹1,200</td><td>—</td><td>Due 28 Jun</td>
-                        <td><span className="stamp due">Due</span></td>
-                        <td><span className="panel-link">Collect</span></td>
-                      </tr>
-                      <tr>
-                        <td className="name-cell"><span className="avatar">AV</span><span className="cell-name">Anjali Verma</span></td>
-                        <td className="cell-amount">₹800</td><td>Bank Transfer</td><td>01 Jul</td>
-                        <td><span className="stamp paid">Paid</span></td>
-                        <td><span className="panel-link">Receipt</span></td>
-                      </tr>
-                      <tr>
-                        <td className="name-cell"><span className="avatar">NJ</span><span className="cell-name">Neha Joshi</span></td>
-                        <td className="cell-amount">₹800</td><td>—</td><td>Due 30 Jun</td>
-                        <td><span className="stamp due">Due</span></td>
-                        <td><span className="panel-link">Collect</span></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
-
-            {/* ================= ATTENDANCE ================= */}
-            {activeView === 'attendance' && (
-              <section className="view active">
-                <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Today · 4 July</div>
-                    <h1 className="page-title">Attendance</h1>
-                  </div>
-                  <div className="topbar-actions">
-                    <div className="search">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-                      <input placeholder="Check in by name or seat" />
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
+                        <div className="stat-label">Total Students</div>
+                        <div className="stat-value">{studentsList.length}</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
+                        <div className="stat-label">Fees Due</div>
+                        <div className="stat-value">₹{Number(feesDueSum).toLocaleString('en-IN')}</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--ink)' }}>
+                        <div className="stat-label">Today's Attendance</div>
+                        <div className="stat-value">{studentsList.length > 0 ? 62 : 0}</div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}><div className="stat-label">Checked in</div><div className="stat-value">{studentsList.length > 0 ? 62 : 0}</div></div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--muted)' }}><div className="stat-label">Checked out</div><div className="stat-value">{studentsList.length > 0 ? 18 : 0}</div></div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{studentsList.length > 0 ? 34 : 0}</div></div>
-                </div>
+                    <div className="grid-2">
+                      <div className="panel">
+                        <div className="panel-head">
+                          <h3 className="panel-title">Seat map</h3>
+                          <span className="panel-link" onClick={() => setActiveView('seats')}>Open full map →</span>
+                        </div>
+                        <div className="seat-legend">
+                          <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
+                          <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
+                          <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
+                        </div>
+                        <div className="seat-grid">
+                          {dashSeats.map((s, idx) => (
+                            <div key={idx} className={`seat ${s.status}`} title={s.student ? `${s.student} — ${s.status}` : 'Available'}>
+                              {s.label}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
 
-                <div className="panel">
-                  <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
-                  <table className="ledger">
-                    <thead>
-                      <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th></tr>
-                    </thead>
-                    <tbody>
-                      {studentsList.length > 0 ? (
-                        <React.Fragment>
-                          <tr><td className="cell-name">Priya Sharma</td><td>A14</td><td className="mono">09:12 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
-                          <tr><td className="cell-name">Anjali Verma</td><td>B03</td><td className="mono">08:55 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
-                          <tr><td className="cell-name">Rohit Kumar</td><td>A07</td><td className="mono">08:20 AM</td><td className="mono">12:10 PM</td><td><span className="pill inactive">Left</span></td></tr>
-                          <tr><td className="cell-name">Kavya Nair</td><td>C09</td><td className="mono">08:30 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
-                        </React.Fragment>
-                      ) : (
-                        <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--muted)' }}>No student attendance data found.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
+                      <div className="panel">
+                        <div className="panel-head"><h3 className="panel-title">Today's activity</h3></div>
+                        <div className="feed">
+                          {activityFeed.length > 0 ? (
+                            activityFeed.map((item, idx) => (
+                              <div className="feed-item" key={idx}>
+                                <div className="feed-time">{item.time}</div>
+                                <div className={`feed-dot ${item.dotColor !== 'teal' ? item.dotColor : ''}`}></div>
+                                <div className="feed-text" dangerouslySetInnerHTML={{ __html: item.text }}></div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.6 }}>
+                              No activity yet. Once students check in or pay fees, you'll see it here first.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-            {/* ================= REPORTS ================= */}
-            {activeView === 'reports' && (
-              <section className="view active">
-                <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Export</div>
-                    <h1 className="page-title">Reports</h1>
-                  </div>
-                  <div className="topbar-actions">
-                    <div className="chip" style={{ cursor: 'default' }}>This month ▾</div>
-                  </div>
-                </div>
+                    <div className="grid-2">
+                      <div className="panel">
+                        <div className="panel-head"><h3 className="panel-title">Monthly revenue</h3></div>
+                        {studentsList.length > 0 ? (
+                          <div className="bars">
+                            <div className="bar-col"><div className="bar" style={{ height: '52%' }}></div><div className="bar-label">Feb</div></div>
+                            <div className="bar-col"><div className="bar" style={{ height: '61%' }}></div><div className="bar-label">Mar</div></div>
+                            <div className="bar-col"><div className="bar" style={{ height: '58%' }}></div><div className="bar-label">Apr</div></div>
+                            <div className="bar-col"><div className="bar" style={{ height: '70%' }}></div><div className="bar-label">May</div></div>
+                            <div className="bar-col"><div className="bar" style={{ height: '66%' }}></div><div className="bar-label">Jun</div></div>
+                            <div className="bar-col"><div className="bar current" style={{ height: '81%' }}></div><div className="bar-label">Jul</div></div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                            Revenue will appear here after your first month of collections.
+                          </div>
+                        )}
+                      </div>
+                      <div className="panel">
+                        <div className="panel-head">
+                          <h3 className="panel-title">Due fees</h3>
+                          <span className="panel-link" onClick={() => setActiveView('fees')}>View all →</span>
+                        </div>
+                        {studentsList.length > 0 ? (
+                          <table className="ledger">
+                            <tbody>
+                              <tr><td className="cell-name">Sahil Mehta</td><td className="cell-amount">₹1,200</td><td><span className="stamp due">Due</span></td></tr>
+                              <tr><td className="cell-name">Neha Joshi</td><td className="cell-amount">₹800</td><td><span className="stamp due">Due</span></td></tr>
+                              <tr><td className="cell-name">Aman Gupta</td><td className="cell-amount">₹1,500</td><td><span className="stamp due">Due</span></td></tr>
+                            </tbody>
+                          </table>
+                        ) : (
+                          <table className="ledger">
+                            <tbody>
+                              <tr>
+                                <td style={{ color: 'var(--muted)', fontSize: '13px', padding: '14px 10px' }}>
+                                  No dues yet — nothing to collect until your first student joins.
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
 
-                <div className="report-grid">
-                  <div className="report-card">
-                    <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
-                    <div className="report-name">Active students</div>
-                    <div className="report-desc">Full roster of currently active members with seat and shift.</div>
-                    <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
-                  </div>
-                  <div className="report-card">
-                    <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg></div>
-                    <div className="report-name">Vacant seats</div>
-                    <div className="report-desc">Available seats by shift, updated in real time.</div>
-                    <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
-                  </div>
-                  <div className="report-card">
-                    <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
-                    <div className="report-name">Fee collection</div>
-                    <div className="report-desc">All payments recorded this month, grouped by method.</div>
-                    <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
-                  </div>
-                  <div className="report-card">
-                    <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg></div>
-                    <div className="report-name">Pending fees</div>
-                    <div className="report-desc">Students with fees overdue, sorted by days pending.</div>
-                    <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
-                  </div>
-                  <div className="report-card">
-                    <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 13l4-4 3 3 5-6" /></svg></div>
-                    <div className="report-name">Attendance summary</div>
-                    <div className="report-desc">Daily check-in trends across the selected date range.</div>
-                    <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
-                  </div>
-                </div>
-              </section>
-            )}
+                {/* ================= STUDENTS ================= */}
+                {activeView === 'students' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Register</div>
+                        <h1 className="page-title">Students</h1>
+                      </div>
+                      <div className="topbar-actions">
+                        <div className="search">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+                          <input placeholder="Search by name or mobile" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} />
+                        </div>
+                        <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
+                      </div>
+                    </div>
 
-            {/* ================= SETTINGS ================= */}
-            {activeView === 'settings' && (
-              <section className="view active">
-                <div className="topbar">
-                  <div>
-                    <div className="page-eyebrow">Configuration</div>
-                    <h1 className="page-title">Settings</h1>
-                  </div>
-                </div>
-                <div className="panel">
-                  <div className="panel-head"><h3 className="panel-title">Library details</h3></div>
-                  <p style={{ color: 'var(--muted)', fontSize: '13.5px' }}>
-                    Library name, shift timings, fee structure, backup schedule, and staff accounts will live here in the full build.
-                  </p>
-                </div>
-              </section>
+                    <div className="panel">
+                      <table className="ledger">
+                        <thead>
+                          <tr><th>Student</th><th>Mobile</th><th>Shift</th><th>Seat</th><th>Joined</th><th>Membership</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                          {filteredStudents.map((s, idx) => (
+                            <tr key={idx}>
+                              <td className="name-cell">
+                                <span className="avatar">
+                                  {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                                </span>
+                                <span className="cell-name">{s.name}</span>
+                              </td>
+                              <td className="mono">{s.mobile}</td>
+                              <td>{s.shift}</td>
+                              <td>{s.seat}</td>
+                              <td>{s.joined}</td>
+                              <td>
+                                <span className={`pill ${s.status}`}>
+                                  {s.status === 'active' ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                              <td><span className="panel-link">View</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="note">
+                      Showing <span>{filteredStudents.length}</span> of {studentsList.length} students. Search narrows the list instantly — try “rohit” or “98”.
+                    </div>
+                  </section>
+                )}
+
+                {/* ================= SEATS ================= */}
+                {activeView === 'seats' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Floor plan</div>
+                        <h1 className="page-title">Seats</h1>
+                      </div>
+                      <div className="topbar-actions">
+                        <button className="btn btn-ghost">+ Create Seats</button>
+                      </div>
+                    </div>
+
+                    <div className="toolbar">
+                      <div className="filter-chips">
+                        {['All shifts', 'Morning (7–2)', 'Evening (2–9)', 'Full day'].map((chip) => (
+                          <div
+                            key={chip}
+                            className={`chip ${seatFilter === chip ? 'active' : ''}`}
+                            onClick={() => setSeatFilter(chip)}
+                          >
+                            {chip}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="seat-legend" style={{ margin: 0 }}>
+                        <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
+                        <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
+                        <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
+                      </div>
+                    </div>
+
+                    <div className="grid-2" style={{ gridTemplateColumns: '1.7fr 1fr' }}>
+                      <div className="panel">
+                        <div className="seat-grid">
+                          {fullSeats.map((s, idx) => (
+                            <div
+                              key={idx}
+                              className={`seat ${s.status} ${selectedSeatIndex === idx ? 'selected' : ''}`}
+                              title={s.student ? `${s.student} — ${s.status}` : 'Available'}
+                              onClick={() => setSelectedSeatIndex(idx)}
+                            >
+                              {s.label}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="panel seat-side">
+                        <div className="panel-head"><h3 className="panel-title">Seat detail</h3></div>
+                        {selectedSeatIndex !== null ? (
+                          fullSeats[selectedSeatIndex].status === 'available' ? (
+                            <div className="seat-detail">
+                              Seat <b>{fullSeats[selectedSeatIndex].label}</b> is available.<br /><br />
+                              <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
+                            </div>
+                          ) : (
+                            <div className="seat-detail filled">
+                              <div className="seat-detail-name">{fullSeats[selectedSeatIndex].student}</div>
+                              <span className={`stamp ${fullSeats[selectedSeatIndex].status === 'due' ? 'due' : 'paid'}`}>
+                                {fullSeats[selectedSeatIndex].status === 'due' ? 'Due' : 'Paid'}
+                              </span>
+                              <div className="seat-detail-row"><span>Seat</span><b>{fullSeats[selectedSeatIndex].label}</b></div>
+                              <div className="seat-detail-row"><span>Shift</span><b>Morning</b></div>
+                              <div className="seat-detail-row"><span>Member since</span><b>Feb 2026</b></div>
+                            </div>
+                          )
+                        ) : (
+                          <div className="seat-detail">Click any seat to view or assign it</div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* ================= FEES ================= */}
+                {activeView === 'fees' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Ledger</div>
+                        <h1 className="page-title">Fees</h1>
+                      </div>
+                      <div className="topbar-actions">
+                        <button className="btn btn-ghost">Due list</button>
+                        <button className="btn btn-primary">+ Collect Fee</button>
+                      </div>
+                    </div>
+
+                    <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
+                        <div className="stat-label">Collected this month</div>
+                        <div className="stat-value">₹64,800</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
+                        <div className="stat-label">Total due</div>
+                        <div className="stat-value">₹12,400</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
+                        <div className="stat-label">Students overdue</div>
+                        <div className="stat-value">7</div>
+                      </div>
+                    </div>
+
+                    <div className="panel">
+                      <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
+                      <table className="ledger">
+                        <thead>
+                          <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="name-cell"><span className="avatar">RK</span><span className="cell-name">Rohit Kumar</span></td>
+                            <td className="cell-amount">₹800</td><td>UPI</td><td>03 Jul</td>
+                            <td><span className="stamp paid">Paid</span></td>
+                            <td><span className="panel-link">Receipt</span></td>
+                          </tr>
+                          <tr>
+                            <td className="name-cell"><span className="avatar">PS</span><span className="cell-name">Priya Sharma</span></td>
+                            <td className="cell-amount">₹1,200</td><td>Cash</td><td>02 Jul</td>
+                            <td><span className="stamp paid">Paid</span></td>
+                            <td><span className="panel-link">Receipt</span></td>
+                          </tr>
+                          <tr>
+                            <td className="name-cell"><span className="avatar">SM</span><span className="cell-name">Sahil Mehta</span></td>
+                            <td className="cell-amount">₹1,200</td><td>—</td><td>Due 28 Jun</td>
+                            <td><span className="stamp due">Due</span></td>
+                            <td><span className="panel-link">Collect</span></td>
+                          </tr>
+                          <tr>
+                            <td className="name-cell"><span className="avatar">AV</span><span className="cell-name">Anjali Verma</span></td>
+                            <td className="cell-amount">₹800</td><td>Bank Transfer</td><td>01 Jul</td>
+                            <td><span className="stamp paid">Paid</span></td>
+                            <td><span className="panel-link">Receipt</span></td>
+                          </tr>
+                          <tr>
+                            <td className="name-cell"><span className="avatar">NJ</span><span className="cell-name">Neha Joshi</span></td>
+                            <td className="cell-amount">₹800</td><td>—</td><td>Due 30 Jun</td>
+                            <td><span className="stamp due">Due</span></td>
+                            <td><span className="panel-link">Collect</span></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+                {/* ================= ATTENDANCE ================= */}
+                {activeView === 'attendance' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Today · 4 July</div>
+                        <h1 className="page-title">Attendance</h1>
+                      </div>
+                      <div className="topbar-actions">
+                        <div className="search">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+                          <input placeholder="Check in by name or seat" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}><div className="stat-label">Checked in</div><div className="stat-value">{studentsList.length > 0 ? 62 : 0}</div></div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--muted)' }}><div className="stat-label">Checked out</div><div className="stat-value">{studentsList.length > 0 ? 18 : 0}</div></div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{studentsList.length > 0 ? 34 : 0}</div></div>
+                    </div>
+
+                    <div className="panel">
+                      <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
+                      <table className="ledger">
+                        <thead>
+                          <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                          {studentsList.length > 0 ? (
+                            <React.Fragment>
+                              <tr><td className="cell-name">Priya Sharma</td><td>A14</td><td className="mono">09:12 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
+                              <tr><td className="cell-name">Anjali Verma</td><td>B03</td><td className="mono">08:55 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
+                              <tr><td className="cell-name">Rohit Kumar</td><td>A07</td><td className="mono">08:20 AM</td><td className="mono">12:10 PM</td><td><span className="pill inactive">Left</span></td></tr>
+                              <tr><td className="cell-name">Kavya Nair</td><td>C09</td><td className="mono">08:30 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
+                            </React.Fragment>
+                          ) : (
+                            <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--muted)' }}>No student attendance data found.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+                {/* ================= REPORTS ================= */}
+                {activeView === 'reports' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Export</div>
+                        <h1 className="page-title">Reports</h1>
+                      </div>
+                      <div className="topbar-actions">
+                        <div className="chip" style={{ cursor: 'default' }}>This month ▾</div>
+                      </div>
+                    </div>
+
+                    <div className="report-grid">
+                      <div className="report-card">
+                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+                        <div className="report-name">Active students</div>
+                        <div className="report-desc">Full roster of currently active members with seat and shift.</div>
+                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                      </div>
+                      <div className="report-card">
+                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg></div>
+                        <div className="report-name">Vacant seats</div>
+                        <div className="report-desc">Available seats by shift, updated in real time.</div>
+                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                      </div>
+                      <div className="report-card">
+                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
+                        <div className="report-name">Fee collection</div>
+                        <div className="report-desc">All payments recorded this month, grouped by method.</div>
+                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                      </div>
+                      <div className="report-card">
+                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg></div>
+                        <div className="report-name">Pending fees</div>
+                        <div className="report-desc">Students with fees overdue, sorted by days pending.</div>
+                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                      </div>
+                      <div className="report-card">
+                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 13l4-4 3 3 5-6" /></svg></div>
+                        <div className="report-name">Attendance summary</div>
+                        <div className="report-desc">Daily check-in trends across the selected date range.</div>
+                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* ================= SETTINGS ================= */}
+                {activeView === 'settings' && (
+                  <section className="view active">
+                    <div className="topbar">
+                      <div>
+                        <div className="page-eyebrow">Configuration</div>
+                        <h1 className="page-title">Settings</h1>
+                      </div>
+                    </div>
+                    <div className="panel">
+                      <div className="panel-head"><h3 className="panel-title">Library details</h3></div>
+                      <p style={{ color: 'var(--muted)', fontSize: '13.5px' }}>
+                        Library name, shift timings, fee structure, backup schedule, and staff accounts will live here in the full build.
+                      </p>
+                    </div>
+                  </section>
+                )}
+              </React.Fragment>
             )}
 
           </main>
