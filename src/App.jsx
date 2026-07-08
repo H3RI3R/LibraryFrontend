@@ -239,22 +239,66 @@ export default function App() {
   const handleOwnerLogin = (e) => {
     e.preventDefault();
     const emailToCheck = loginTab === 'email' ? ownerEmail : ownerMobile;
-    // Check trial expiration status
-    fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
+
+    fetch(`${API_BASE_URL}/login/all`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: emailToCheck,
+        password: ownerPassword
+      })
+    })
       .then(res => res.json())
-      .then(resData => {
-        if (resData.status === 'success') {
-          setIsTrialExpired(resData.data.isExpired);
-          setLibraryName(resData.data.library.name);
-          setLibraryCity(resData.data.library.city);
-          setTotalSeats(resData.data.library.totalSeats);
+      .then(loginData => {
+        if (loginData.status === 'success') {
+          localStorage.setItem('token', loginData.token);
+          localStorage.setItem('role', loginData.role);
+
+          // Now fetch status/details
+          fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
+            .then(res => res.json())
+            .then(resData => {
+              if (resData.status === 'success') {
+                setIsTrialExpired(resData.data.isExpired);
+                setLibraryName(resData.data.library.name);
+                setLibraryCity(resData.data.library.city);
+                setTotalSeats(resData.data.library.totalSeats);
+              }
+              setCurrentScreen('app-shell');
+              showToast('Logged in successfully.');
+            })
+            .catch(err => {
+              console.error("Error verifying trial status:", err);
+              setCurrentScreen('app-shell');
+            });
+        } else {
+          showToast(`Login failed: ${loginData.message}`);
         }
-        setCurrentScreen('app-shell');
       })
       .catch(err => {
-        console.error("Error verifying trial status:", err);
-        setCurrentScreen('app-shell');
+        console.error("Login API error:", err);
+        showToast('Failed to connect to login API.');
       });
+  };
+
+  const handleLogout = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetch(`${API_BASE_URL}/login/logout`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': token
+        }
+      }).catch(err => console.error("Logout API error:", err));
+    }
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    setCurrentScreen('login');
+    setLoginRole('owner');
+    setStudentLoginStep(1);
+    showToast('Logged out successfully.');
   };
 
   const handleSendStudentOtp = () => {
@@ -268,9 +312,7 @@ export default function App() {
   };
 
   const handleStudentLogout = () => {
-    setCurrentScreen('login');
-    setLoginRole('student');
-    setStudentLoginStep(1);
+    handleLogout();
   };
 
   const handlePayNowSubmit = (method) => {
@@ -1020,11 +1062,7 @@ export default function App() {
               <li
                 className="navitem"
                 style={{ marginTop: '10px', borderTop: '1px solid rgba(239,232,214,0.15)', paddingTop: '12px' }}
-                onClick={() => {
-                  setCurrentScreen('login');
-                  setLoginRole('owner');
-                  setStudentLoginStep(1);
-                }}
+                onClick={handleLogout}
               >
                 <span className="dot"></span>
                 Log out
