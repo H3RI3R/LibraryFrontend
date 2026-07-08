@@ -335,6 +335,9 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('role', data.role);
+
           setOwnerName(obOwnerName.trim());
           setLibraryName(obLibName.trim());
           setLibraryCity(obLibCity.trim());
@@ -348,7 +351,13 @@ export default function App() {
           setActivityFeed([]);
           setIsTrialExpired(false);
           
-          setCurrentScreen('app-shell');
+          if (data.role === 'ADMIN') {
+            setCurrentScreen('app-shell');
+          } else if (data.role === 'STUDENT') {
+            setCurrentScreen('student-shell');
+          } else {
+            setCurrentScreen('app-shell');
+          }
           setObStep(1);
           showToast(`Welcome, <b>${obOwnerName.split(' ')[0]}</b>! ${obLibName} is ready.`);
         } else {
