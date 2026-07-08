@@ -103,6 +103,15 @@ export default function App() {
   useEffect(() => {
     setDashSeats(buildSeats(36));
     setFullSeats(buildSeats(120));
+
+    // Load Razorpay script dynamically
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
   }, []);
 
   // Fetch plans from backend on wizard activation
@@ -306,7 +315,7 @@ export default function App() {
   };
 
   // Onboarding registration submission
-  const handleOnboardingRegisterSubmit = (isSkipTrial) => {
+  const handleOnboardingRegisterSubmit = (isSkipTrial, paymentTxnId = null) => {
     const payload = {
       fullName: obOwnerName,
       mobileNumber: obOwnerMobile,
@@ -322,7 +331,8 @@ export default function App() {
       dueDay: obDueDay,
       paymentMethods: Object.keys(obPayMethods).filter(k => obPayMethods[k]).join(','),
       planId: isSkipTrial ? 0 : selectedPlanId,
-      isFreeTrial: isSkipTrial
+      isFreeTrial: isSkipTrial,
+      paymentTxnId: paymentTxnId
     };
 
     fetch(`${API_BASE_URL}/signup/register`, {
@@ -367,6 +377,71 @@ export default function App() {
       .catch(err => {
         console.error("API error:", err);
         showToast('Failed to connect to register API.');
+      });
+  };
+
+  const handlePaidCheckout = () => {
+    const selectedPlan = plansList.find(p => p.id === selectedPlanId) || { monthlyPrice: 499 };
+    const price = selectedPlan.monthlyPrice;
+
+    fetch(`${API_BASE_URL}/signup/create-order?amount=${price}&email=${encodeURIComponent(obOwnerEmail)}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === 'success') {
+          const order = resData.order;
+          const options = {
+            key: 'rzp_test_SmOJPEFc2boWol',
+            amount: order.amount,
+            currency: 'INR',
+            name: obLibName || 'StudySpace Library',
+            description: 'Onboarding Plan Subscription',
+            order_id: order.orderId,
+            handler: function (response) {
+              fetch(`${API_BASE_URL}/signup/verify-payment`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_signature: response.razorpay_signature
+                })
+              })
+                .then(vRes => vRes.json())
+                .then(verifyData => {
+                  if (verifyData.status === 'success') {
+                    handleOnboardingRegisterSubmit(false, response.razorpay_payment_id);
+                  } else {
+                    showToast('Payment verification failed.');
+                  }
+                })
+                .catch(err => {
+                  console.error('Verify payment error:', err);
+                  showToast('Error verifying payment.');
+                });
+            },
+            prefill: {
+              name: obOwnerName,
+              email: obOwnerEmail,
+              contact: obOwnerMobile
+            },
+            theme: {
+              color: '#1e3831'
+            }
+          };
+
+          const rzp = new window.Razorpay(options);
+          rzp.open();
+        } else {
+          showToast(`Failed to create order: ${resData.message}`);
+        }
+      })
+      .catch(err => {
+        console.error('Create order error:', err);
+        showToast('Failed to initialize payment.');
       });
   };
 
@@ -817,7 +892,7 @@ export default function App() {
                   {obStep === 4 ? (
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <button className="btn btn-ghost" onClick={() => handleOnboardingRegisterSubmit(true)}>Skip for Free plan</button>
-                      <button className="btn btn-primary" onClick={() => handleOnboardingRegisterSubmit(false)}>Start trial &amp; activate dashboard →</button>
+                      <button className="btn btn-primary" onClick={handlePaidCheckout}>Start trial &amp; activate dashboard →</button>
                     </div>
                   ) : (
                     <button className="btn btn-primary" onClick={handleObNext}>
