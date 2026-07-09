@@ -1,34 +1,136 @@
-# Library Management Frontend
+# Library Management System — Frontend
 
-This is the React + Vite frontend application for **StudySpace (Sunrise Reading Room)**.
+A React + Vite frontend for the StudySpace Library Management System.
 
-## Tech Stack
-- **Framework**: React (Functional components, Hooks)
-- **Build Tool**: Vite
-- **Styling**: Vanilla CSS (Pixel-perfect conversion from the design prototype)
+---
 
-## Getting Started
+## 🏗️ Tech Stack
 
-### Prerequisites
-- Node.js (v16+)
-- npm (v7+)
+- **React 18** with React Router DOM (client-side routing)
+- **Vite 8** (bundler & dev server)
+- **Vanilla CSS** (no Tailwind)
+- **API Base URL**: `https://test.edu2all.in/library`
 
-### Installation
-Install the project dependencies:
+---
+
+## 📋 Prerequisites
+
+- Node.js >= 18.x
+- npm >= 9.x
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone https://gitlab.com/librarymangementnew/librarymangement_frontend.git
+cd librarymangement_frontend
+```
+
+### 2. Install dependencies
+
 ```bash
 npm install
 ```
 
-### Running Locally
-To launch the development server:
+### 3. Run the development server
+
 ```bash
 npm run dev
 ```
-The application will default to port `5173` (or the next available port).
 
-### Building for Production
-To build the project for production:
+The app will start at: **http://localhost:5273**
+
+> Port is locked to `5273` via `vite.config.js`. If this port is in use, free it before starting.
+
+### 4. Build for production
+
 ```bash
 npm run build
 ```
-The production bundle will be generated under the `dist` directory.
+
+The compiled output will be in the `dist/` folder.
+
+### 5. Preview the production build locally
+
+```bash
+npm run preview
+```
+
+---
+
+## 🗂️ Project Structure
+
+```
+src/
+├── App.jsx               # Main app with routes and all views
+├── main.jsx              # Entry point — wraps App in BrowserRouter
+├── index.css             # Global styles
+└── components/
+    ├── AddStudentModal.jsx
+    ├── PayNowModal.jsx
+    └── Toast.jsx
+```
+
+---
+
+## 🔗 Routes
+
+| Path          | Description                |
+|---------------|----------------------------|
+| /login        | Owner / Student login page |
+| /onboarding   | New library signup wizard  |
+| /dashboard    | Owner admin dashboard      |
+| /student      | Student portal             |
+| *             | Redirects to /login        |
+
+---
+
+## 🌐 API Configuration
+
+API base URL is defined in `src/App.jsx`:
+
+```js
+const API_BASE_URL = 'https://test.edu2all.in/library';
+```
+
+To point at a local backend instead, change this to:
+
+```js
+const API_BASE_URL = 'http://localhost:5007';
+```
+
+---
+
+## 🔑 Authentication
+
+- JWT tokens are stored in `localStorage` under the key `token`.
+- All authenticated API requests send the token as `Authorization: <token>` header.
+- Logout clears `token` and `role` from `localStorage` and redirects to `/login`.
+
+---
+
+## 🧩 Backend Repository
+
+Backend Spring Boot project:
+https://gitlab.com/librarymangementnew/librarymanagement_backend
+
+---
+
+## ⚙️ Backend — How to Run
+
+```bash
+# Clone backend
+git clone https://gitlab.com/librarymangementnew/librarymanagement_backend.git
+cd librarymanagement_backend
+
+# Run with staging profile (requires VPN for DB access)
+mvn spring-boot:run -Dspring-boot.run.profiles=staging
+
+# Or run with local profile
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Backend runs on **port 5007** by default.
