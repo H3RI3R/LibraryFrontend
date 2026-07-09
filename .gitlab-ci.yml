@@ -1,0 +1,75 @@
+stages:
+  - docker_build
+  - docker_deploy
+
+variables:
+  SSH_USER: "girjesh"
+  SERVER_IP: "89.116.122.211"
+  SSH_PORT: "22"
+
+  IMAGE_NAME: "library-frontend"
+  CONTAINER_NAME: "library-frontend"
+  FRONTEND_PORT: "5273"
+  CONTAINER_PORT: "5273"
+
+# ---------------- DOCKER BUILD ----------------
+docker_build_frontend:
+  stage: docker_build
+  image: docker:24
+  services:
+    - docker:24-dind
+
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+
+  script:
+    - echo "🐳 Building Library Frontend Docker image"
+    - docker build -t $IMAGE_NAME:latest .
+
+    - echo "📦 Saving Docker image"
+    - docker save $IMAGE_NAME:latest | gzip > $IMAGE_NAME.tar.gz
+
+  artifacts:
+    paths:
+      - $IMAGE_NAME.tar.gz
+    expire_in: 1h
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ---------------- DOCKER DEPLOY ----------------
+docker_deploy_frontend:
+  stage: docker_deploy
+  image: alpine:latest
+
+  dependencies:
+    - docker_build_frontend
+
+  before_script:
+    - apk add --no-cache openssh-client docker-cli
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -p $SSH_PORT -H $SERVER_IP >> ~/.ssh/known_hosts
+
+  script:
+    - echo "🚀 Uploading Docker image to server"
+    - scp -P $SSH_PORT $IMAGE_NAME.tar.gz $SSH_USER@$SERVER_IP:/home/$SSH_USER/
+
+    - |
+      ssh -p $SSH_PORT $SSH_USER@$SERVER_IP <<EOF
+        docker load < /home/$SSH_USER/$IMAGE_NAME.tar.gz
+
+        docker stop $CONTAINER_NAME || true
+        docker rm $CONTAINER_NAME || true
+
+        docker run -d \
+          --name $CONTAINER_NAME \
+          --restart always \
+          -p $FRONTEND_PORT:$CONTAINER_PORT \
+          $IMAGE_NAME:latest
+      EOF
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
