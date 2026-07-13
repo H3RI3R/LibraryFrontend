@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats }) {
+export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, studentToEdit }) {
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
   const [joined, setJoined] = useState('');
@@ -10,34 +10,73 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats }
   const [shift, setShift] = useState('Morning');
   const [seat, setSeat] = useState('');
   const [status, setStatus] = useState('active');
+  const [monthlyFee, setMonthlyFee] = useState(800);
+  const [profileImage, setProfileImage] = useState('');
 
   useEffect(() => {
     if (open) {
-      setName('');
-      setMobile('');
-      setJoined(new Date().toISOString().slice(0, 10));
-      setParentName('');
-      setParentMobile('');
-      setAddress('');
-      setShift('Morning');
-      setStatus('active');
+      if (studentToEdit) {
+        setName(studentToEdit.name || '');
+        setMobile(studentToEdit.mobile || '');
+        // Convert joined date back to YYYY-MM-DD
+        let rawDate = studentToEdit.joinedRaw || '';
+        if (rawDate && rawDate.includes('/')) {
+          const parts = rawDate.split('/');
+          if (parts.length === 3) {
+            rawDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+          }
+        }
+        if (!rawDate && studentToEdit.joined) {
+          // If joined is "12 Feb 2026", try parsing or just default
+          rawDate = new Date(studentToEdit.joined).toISOString().slice(0, 10);
+        }
+        setJoined(rawDate || new Date().toISOString().slice(0, 10));
+        setParentName(studentToEdit.parentName || '');
+        setParentMobile(studentToEdit.parentMobile || '');
+        setAddress(studentToEdit.address || '');
+        setShift(studentToEdit.shift || 'Morning');
+        setSeat(studentToEdit.seat || '');
+        setStatus(studentToEdit.status || 'active');
+        setMonthlyFee(studentToEdit.monthlyFee || 800);
+        setProfileImage(studentToEdit.profileImage || '');
+      } else {
+        setName('');
+        setMobile('');
+        setJoined(new Date().toISOString().slice(0, 10));
+        setParentName('');
+        setParentMobile('');
+        setAddress('');
+        setShift('Morning');
+        setStatus('active');
+        setMonthlyFee(800);
+        setProfileImage('');
+      }
     }
-  }, [open]);
+  }, [open, studentToEdit]);
 
   useEffect(() => {
-    if (vacantSeats && vacantSeats.length > 0) {
+    if (!studentToEdit && vacantSeats && vacantSeats.length > 0) {
       setSeat(vacantSeats[0].label);
-    } else {
-      setSeat('');
     }
-  }, [vacantSeats]);
+  }, [vacantSeats, studentToEdit]);
 
   if (!open) return null;
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfileImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name || !seat) {
-      alert('Please add a name and pick a seat before saving.');
+    if (!name) {
+      alert('Please add a name.');
       return;
     }
     onSubmit({
@@ -50,6 +89,8 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats }
       parentName,
       parentMobile,
       address,
+      monthlyFee,
+      profileImage
     });
   };
 
@@ -58,14 +99,29 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats }
       <div className="modal-card">
         <div className="modal-head">
           <div>
-            <h3 className="modal-title">Add student</h3>
-            <div className="modal-sub">New entry will be added to the register and assigned a seat.</div>
+            <h3 className="modal-title">{studentToEdit ? 'Edit student' : 'Add student'}</h3>
+            <div className="modal-sub">{studentToEdit ? 'Modify student profile and configurations.' : 'New entry will be added to the register and assigned a seat.'}</div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             <div className="form-grid">
+              
+              <div className="field span-2" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                <label style={{ alignSelf: 'flex-start' }}>Profile Image</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', width: '100%' }}>
+                  <div style={{ width: '60px', height: '60px', borderRadius: '50%', backgroundColor: 'var(--paper-deep, #eee)', border: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {profileImage ? (
+                      <img src={profileImage} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: '20px', color: '#888' }}>👤</span>
+                    )}
+                  </div>
+                  <input type="file" accept="image/*" onChange={handleImageChange} style={{ fontSize: '14px' }} />
+                </div>
+              </div>
+
               <div className="field span-2">
                 <label>Student name</label>
                 <input type="text" placeholder="e.g. Kavya Nair" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -79,16 +135,15 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats }
                 <input type="date" value={joined} onChange={(e) => setJoined(e.target.value)} required />
               </div>
               <div className="field">
-                <label>Parent name</label>
-                <input type="text" placeholder="e.g. Suresh Nair" value={parentName} onChange={(e) => setParentName(e.target.value)} />
+                <label>Monthly Fee Amount</label>
+                <input type="number" placeholder="800" value={monthlyFee} onChange={(e) => setMonthlyFee(Number(e.target.value))} required />
               </div>
               <div className="field">
-                <label>Parent mobile</label>
-                <input type="tel" placeholder="98110 00000" value={parentMobile} onChange={(e) => setParentMobile(e.target.value)} />
-              </div>
-              <div className="field span-2">
-                <label>Address</label>
-                <textarea rows="2" placeholder="House no., street, area" value={address} onChange={(e) => setAddress(e.target.value)}></textarea>
+                <label>Membership status</label>
+                <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
               </div>
               <div className="field">
                 <label>Shift</label>
@@ -101,24 +156,33 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats }
               <div className="field">
                 <label>Assign seat</label>
                 <select value={seat} onChange={(e) => setSeat(e.target.value)}>
+                  {studentToEdit && <option value={studentToEdit.seat}>{studentToEdit.seat} (Current)</option>}
                   {vacantSeats.map(s => (
                     <option key={s.label} value={s.label}>{s.label}</option>
                   ))}
+                  <option value="">No Seat</option>
                 </select>
-                <div className="field-hint">{vacantSeats.length} seats currently vacant</div>
+              </div>
+              
+              <div style={{ gridColumn: 'span 2', height: '1px', backgroundColor: '#eee', margin: '10px 0' }} />
+
+              <div className="field">
+                <label>Parent name</label>
+                <input type="text" placeholder="e.g. Suresh Nair" value={parentName} onChange={(e) => setParentName(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Parent mobile</label>
+                <input type="tel" placeholder="98110 00000" value={parentMobile} onChange={(e) => setParentMobile(e.target.value)} />
               </div>
               <div className="field span-2">
-                <label>Membership status</label>
-                <select value={status} onChange={(e) => setStatus(e.target.value)}>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
+                <label>Address</label>
+                <textarea rows="2" placeholder="House no., street, area" value={address} onChange={(e) => setAddress(e.target.value)}></textarea>
               </div>
             </div>
           </div>
           <div className="modal-foot">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save student</button>
+            <button type="submit" className="btn btn-primary">{studentToEdit ? 'Save Changes' : 'Save Student'}</button>
           </div>
         </form>
       </div>

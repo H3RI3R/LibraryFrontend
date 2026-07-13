@@ -3,10 +3,11 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import Toast from './components/Toast';
 import PayNowModal from './components/PayNowModal';
 import AddStudentModal from './components/AddStudentModal';
+import ViewStudentModal from './components/ViewStudentModal';
+import api, { API_BASE_URL } from './api';
 
 // --- Default Data & Helper Functions ---
 const names = ["Priya S.", "Rohit K.", "Anjali V.", "Kavya N.", "Sahil M.", "Neha J.", "Aman G.", "Vikram R.", "Divya P.", "Karan S.", "Meera T.", "Yash B."];
-const API_BASE_URL = 'https://test.edu2all.in/library';
 
 function buildSeats(count) {
   const seats = [];
@@ -102,8 +103,7 @@ export default function App() {
 
   // Initialize seats once on mount
   useEffect(() => {
-    setDashSeats(buildSeats(36));
-    setFullSeats(buildSeats(120));
+    fetchSeats();
 
     // Load Razorpay script dynamically
     const script = document.createElement('script');
@@ -181,6 +181,8 @@ export default function App() {
     }
   }, [location.pathname, totalSeats]);
 
+
+
   // --- Students Caching ---
   const [studentsList, setStudentsList] = useState([]);
   const [studentSearch, setStudentSearch] = useState('');
@@ -196,6 +198,21 @@ export default function App() {
   // --- Modals State ---
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [payNowOpen, setPayNowOpen] = useState(false);
+  const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
+  const [studentToEdit, setStudentToEdit] = useState(null);
+  const [seatModalOpen, setSeatModalOpen] = useState(false);
+  const [editingSeatId, setEditingSeatId] = useState(null);
+  const [seatForm, setSeatForm] = useState({ seatNumber: '', floor: '', section: '' });
+  const [attendanceList, setAttendanceList] = useState([]);
+  const [attendanceStats, setAttendanceStats] = useState({ checkedIn: 0, checkedOut: 0, notYetArrived: 0 });
+  const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [editAttendanceOpen, setEditAttendanceOpen] = useState(false);
+  const [editingAttendance, setEditingAttendance] = useState(null);
+  const [attendanceForm, setAttendanceForm] = useState({ status: 'PRESENT', checkIn: '', checkOut: '' });
+  const [selectedFeeForPayment, setSelectedFeeForPayment] = useState(null);
+  const [feeStats, setFeeStats] = useState({ collectedThisMonth: 0, totalDue: 0, studentsOverdue: 0 });
+  const [feeHistoryList, setFeeHistoryList] = useState([]);
+  const [feeFilter, setFeeFilter] = useState('all');
 
   // --- Toast State ---
   const [toastMessage, setToastMessage] = useState('');
@@ -222,6 +239,18 @@ export default function App() {
   const occupiedCount = fullSeats.filter(s => s.status === 'occupied' || s.status === 'due').length;
   const feesDueSum = fullSeats.filter(s => s.status === 'due').length * 800; // Mock calculation based on due count
 
+  useEffect(() => {
+    if (activeView === 'attendance' || activeView === 'seats') {
+      fetchAttendanceData();
+    }
+    if (activeView === 'seats') {
+      fetchSeats();
+    }
+    if (activeView === 'fees') {
+      fetchFeeData();
+    }
+  }, [activeView]);
+
   const showToast = (html) => {
     setToastMessage(html);
     setToastVisible(true);
@@ -235,6 +264,231 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [toastVisible]);
+
+  const fetchSeats = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetch(`${API_BASE_URL}/api/seats`, { headers: { 'Authorization': token } })
+        .then(res => res.json())
+        .then(resData => {
+          if (resData.success && Array.isArray(resData.data)) {
+            const mappedSeats = resData.data.map(s => ({
+              id: s.id,
+              label: s.seatNumber,
+              floor: s.floor,
+              section: s.section,
+              status: s.status === 'AVAILABLE' ? 'available' : s.status === 'OCCUPIED' ? 'occupied' : 'reserved',
+              student: null 
+            }));
+            setDashSeats(mappedSeats.slice(0, 36));
+            setFullSeats(mappedSeats);
+          }
+        })
+        .catch(console.error);
+    }
+  };
+
+  const fetchAttendanceData = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetch(`${API_BASE_URL}/api/attendance/today`, { headers: { 'Authorization': token } })
+        .then(res => res.json())
+        .then(resData => {
+          if (resData.success && Array.isArray(resData.data)) {
+            setAttendanceList(resData.data);
+          }
+        })
+        .catch(console.error);
+
+      fetch(`${API_BASE_URL}/api/attendance/dashboard`, { headers: { 'Authorization': token } })
+        .then(res => res.json())
+        .then(resData => {
+          if (resData.success && resData.data) {
+            setAttendanceStats({
+              checkedIn: resData.data.checkedIn || 0,
+              checkedOut: resData.data.checkedOut || 0,
+              notYetArrived: resData.data.notYetArrived || 0
+            });
+          }
+        })
+        .catch(console.error);
+    }
+  };
+
+  const fetchFeeData = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.feeApi.dashboard()
+        .then(res => {
+          if (res.success && res.data) {
+            setFeeStats({
+              collectedThisMonth: res.data.collectedThisMonth || 0,
+              totalDue: res.data.totalDue || 0,
+              studentsOverdue: res.data.studentsOverdue || 0
+            });
+          }
+        })
+        .catch(console.error);
+
+      api.feeApi.getAll()
+        .then(res => {
+          if (res.success && Array.isArray(res.data)) {
+            setFeeHistoryList(res.data);
+          } else {
+            setFeeHistoryList([]);
+          }
+        })
+        .catch(err => {
+          console.error("Error loading fees:", err);
+          setFeeHistoryList([]);
+        });
+    }
+  };
+
+  const handleExportReport = (reportType, format) => {
+    let apiCall;
+    let filename = reportType;
+    let headers = [];
+    let mapRow = () => {};
+
+    if (reportType === 'active-students') {
+      apiCall = api.reportApi.getActiveStudents();
+      headers = ['Student ID', 'Name', 'Mobile', 'Parent Name', 'Seat', 'Shift', 'Status'];
+      mapRow = (s) => [s.studentId, s.studentName, s.mobileNumber, s.parentName, s.assignedSeat || '—', s.shift, s.membershipStatus];
+    } else if (reportType === 'vacant-seats') {
+      apiCall = api.reportApi.getVacantSeats();
+      headers = ['Seat ID', 'Seat Number', 'Floor', 'Section', 'Status'];
+      mapRow = (s) => [s.seatId, s.seatNumber, s.floor, s.section, s.status];
+    } else if (reportType === 'pending-fees') {
+      apiCall = api.reportApi.getPendingFees();
+      headers = ['Student ID', 'Student Name', 'Seat Number', 'Pending Amount', 'Due Date'];
+      mapRow = (f) => [f.studentId, f.studentName, f.seatNumber, f.pendingAmount, f.dueDate];
+    } else if (reportType === 'attendance-log') {
+      const token = localStorage.getItem('token');
+      apiCall = fetch(`${API_BASE_URL}/api/attendance/today`, { headers: { 'Authorization': token } }).then(res => res.json());
+      headers = ['Date', 'Student Name', 'Seat Number', 'Check-in', 'Check-out', 'Status'];
+      mapRow = (a) => [a.attendanceDate, a.studentName, a.seatNumber, a.checkIn || '—', a.checkOut || '—', a.status];
+    } else if (reportType === 'fee-collection') {
+      apiCall = api.reportApi.getFeeCollection();
+    }
+
+    if (apiCall) {
+      apiCall.then(res => {
+        if (res.success && reportType === 'fee-collection') {
+          if (format === 'excel') {
+            const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+              + ["Month,Year,Total Collection"].join(",") + "\n"
+              + [res.data.month, res.data.year, res.data.totalCollection || 0].join(",");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `fee-collection-summary.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          } else {
+            alert(`Current Month Collection Summary:\nMonth: ${res.data.month}\nYear: ${res.data.year}\nTotal Collection: ₹${res.data.totalCollection || 0}`);
+          }
+          return;
+        }
+
+        if (res.success && Array.isArray(res.data)) {
+          const rows = res.data.map(mapRow);
+          if (format === 'excel') {
+            const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+              + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `${filename}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast(`${filename} exported to Excel/CSV`);
+          } else {
+            const printWindow = window.open('', '_blank');
+            const htmlContent = `
+              <html>
+                <head>
+                  <title>${filename.toUpperCase()} REPORT</title>
+                  <style>
+                    body { font-family: system-ui, sans-serif; padding: 24px; color: #333; }
+                    h1 { font-size: 24px; margin-bottom: 20px; text-transform: uppercase; color: #0284c7; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+                    th { background-color: #f3f4f6; font-weight: 600; }
+                    tr:nth-child(even) { background-color: #f9fafb; }
+                  </style>
+                </head>
+                <body>
+                  <h1>${filename.replace(/-/g, ' ')} report</h1>
+                  <p>Generated on: ${new Date().toLocaleDateString('en-GB')}</p>
+                  <table>
+                    <thead>
+                      <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                    </thead>
+                    <tbody>
+                      ${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}
+                    </tbody>
+                  </table>
+                  <script>
+                    window.onload = function() { window.print(); window.close(); }
+                  </script>
+                </body>
+              </html>
+            `;
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+          }
+        } else {
+          alert("No data found to export.");
+        }
+      }).catch(err => {
+        console.error("Export error:", err);
+        alert("Failed to export report data.");
+      });
+    }
+  };
+
+  const handlePayNowSubmit = (method, amount) => {
+    if (!selectedFeeForPayment) {
+      showToast('Error: No fee record selected.');
+      return;
+    }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('Session expired. Please log in again.');
+      return;
+    }
+
+    api.feeApi.pay({
+      feeId: selectedFeeForPayment.id,
+      paidAmount: amount,
+      paymentMode: method
+    })
+      .then(res => {
+        if (res.success) {
+          showToast('Payment collected successfully!');
+          setPayNowOpen(false);
+          setSelectedFeeForPayment(null);
+          fetchFeeData();
+          if (selectedStudentDetail && selectedStudentDetail.student) {
+            api.studentApi.getById(selectedStudentDetail.student.id)
+              .then(sRes => {
+                if (sRes.success) {
+                  setSelectedStudentDetail(sRes.data);
+                }
+              });
+          }
+        } else {
+          alert(res.message || 'Payment failed.');
+        }
+      })
+      .catch(err => {
+        console.error("Payment error:", err);
+        showToast('Payment processing failed.');
+      });
+  };
 
   // --- Actions ---
   const handleOwnerLogin = (e) => {
@@ -316,16 +570,7 @@ export default function App() {
     handleLogout();
   };
 
-  const handlePayNowSubmit = (method) => {
-    setIsSubPaid(true);
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-    setStudentPaymentHistory([
-      { month: 'July 2026', amount: '₹800', method: method, date: today, status: 'Paid' },
-      ...studentPaymentHistory
-    ]);
-    setPayNowOpen(false);
-    showToast('Payment successful — thank you, Anjali!');
-  };
+
 
   const handleAddStudentSubmit = (studentData) => {
     const token = localStorage.getItem('token');
@@ -1306,7 +1551,11 @@ export default function App() {
                         <h1 className="page-title">Seats</h1>
                       </div>
                       <div className="topbar-actions">
-                        <button className="btn btn-ghost">+ Create Seats</button>
+                        <button className="btn btn-ghost" onClick={() => {
+                          setEditingSeatId(null);
+                          setSeatForm({ seatNumber: '', floor: '', section: '' });
+                          setSeatModalOpen(true);
+                        }}>+ Create Seats</button>
                       </div>
                     </div>
 
@@ -1351,18 +1600,57 @@ export default function App() {
                             <div className="seat-detail">
                               Seat <b>{fullSeats[selectedSeatIndex].label}</b> is available.<br /><br />
                               <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => {
+                                  setEditingSeatId(fullSeats[selectedSeatIndex].id);
+                                  setSeatForm({
+                                    seatNumber: fullSeats[selectedSeatIndex].label,
+                                    floor: fullSeats[selectedSeatIndex].floor || '',
+                                    section: fullSeats[selectedSeatIndex].section || ''
+                                  });
+                                  setSeatModalOpen(true);
+                                }}>Edit</button>
+                                <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--terracotta)' }} onClick={() => {
+                                  if(confirm('Are you sure you want to delete this seat?')) {
+                                    api.seatApi.delete(fullSeats[selectedSeatIndex].id)
+                                      .then(res => {
+                                        if(res.success) {
+                                          showToast('Seat deleted');
+                                          setSelectedSeatIndex(null);
+                                          fetchSeats();
+                                        } else {
+                                          alert(res.message || "Failed to delete seat.");
+                                        }
+                                      });
+                                  }
+                                }}>Delete</button>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="seat-detail filled">
-                              <div className="seat-detail-name">{fullSeats[selectedSeatIndex].student}</div>
-                              <span className={`stamp ${fullSeats[selectedSeatIndex].status === 'due' ? 'due' : 'paid'}`}>
-                                {fullSeats[selectedSeatIndex].status === 'due' ? 'Due' : 'Paid'}
-                              </span>
-                              <div className="seat-detail-row"><span>Seat</span><b>{fullSeats[selectedSeatIndex].label}</b></div>
-                              <div className="seat-detail-row"><span>Shift</span><b>Morning</b></div>
-                              <div className="seat-detail-row"><span>Member since</span><b>Feb 2026</b></div>
-                            </div>
-                          )
+                            ) : (() => {
+                              const currentSeat = fullSeats[selectedSeatIndex];
+                              const assignedStudent = studentsList.find(st => st.seat === currentSeat.label);
+                              const todayRecord = assignedStudent ? attendanceList.find(a => a.studentId === assignedStudent.id) : null;
+                              
+                              const attStatus = todayRecord ? (todayRecord.status === 'ABSENT' ? 'Absent' : todayRecord.checkOut ? 'Left' : 'Checked In') : 'Absent';
+                              const attClass = todayRecord ? (todayRecord.status === 'ABSENT' ? 'due' : todayRecord.checkOut ? 'inactive' : 'active') : 'due';
+
+                              return (
+                                <div className="seat-detail filled">
+                                  <div className="seat-detail-name">{assignedStudent ? assignedStudent.name : 'Occupied'}</div>
+                                  <div style={{ display: 'flex', gap: '8px', margin: '8px 0 16px 0' }}>
+                                    <span className={`stamp ${currentSeat.status === 'due' ? 'due' : 'paid'}`} style={{ margin: 0 }}>
+                                      {currentSeat.status === 'due' ? 'Due' : 'Paid'}
+                                    </span>
+                                    <span className={`stamp ${attClass}`} style={{ margin: 0 }}>
+                                      {attStatus}
+                                    </span>
+                                  </div>
+                                  <div className="seat-detail-row"><span>Seat</span><b>{currentSeat.label}</b></div>
+                                  <div className="seat-detail-row"><span>Floor</span><b>{currentSeat.floor || '—'}</b></div>
+                                  <div className="seat-detail-row"><span>Section</span><b>{currentSeat.section || '—'}</b></div>
+                                </div>
+                              );
+                            })()
                         ) : (
                           <div className="seat-detail">Click any seat to view or assign it</div>
                         )}
@@ -1379,114 +1667,228 @@ export default function App() {
                         <div className="page-eyebrow">Ledger</div>
                         <h1 className="page-title">Fees</h1>
                       </div>
-                      <div className="topbar-actions">
-                        <button className="btn btn-ghost">Due list</button>
-                        <button className="btn btn-primary">+ Collect Fee</button>
-                      </div>
                     </div>
 
                     <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
                       <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
                         <div className="stat-label">Collected this month</div>
-                        <div className="stat-value">₹64,800</div>
+                        <div className="stat-value">₹{feeStats.collectedThisMonth !== undefined ? feeStats.collectedThisMonth : 0}</div>
                       </div>
                       <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
                         <div className="stat-label">Total due</div>
-                        <div className="stat-value">₹12,400</div>
+                        <div className="stat-value">₹{feeStats.totalDue !== undefined ? feeStats.totalDue : 0}</div>
                       </div>
                       <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
                         <div className="stat-label">Students overdue</div>
-                        <div className="stat-value">7</div>
+                        <div className="stat-value">{feeStats.studentsOverdue !== undefined ? feeStats.studentsOverdue : 0}</div>
                       </div>
                     </div>
 
-                    <div className="panel">
-                      <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
-                      <table className="ledger">
-                        <thead>
-                          <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="name-cell"><span className="avatar">RK</span><span className="cell-name">Rohit Kumar</span></td>
-                            <td className="cell-amount">₹800</td><td>UPI</td><td>03 Jul</td>
-                            <td><span className="stamp paid">Paid</span></td>
-                            <td><span className="panel-link">Receipt</span></td>
-                          </tr>
-                          <tr>
-                            <td className="name-cell"><span className="avatar">PS</span><span className="cell-name">Priya Sharma</span></td>
-                            <td className="cell-amount">₹1,200</td><td>Cash</td><td>02 Jul</td>
-                            <td><span className="stamp paid">Paid</span></td>
-                            <td><span className="panel-link">Receipt</span></td>
-                          </tr>
-                          <tr>
-                            <td className="name-cell"><span className="avatar">SM</span><span className="cell-name">Sahil Mehta</span></td>
-                            <td className="cell-amount">₹1,200</td><td>—</td><td>Due 28 Jun</td>
-                            <td><span className="stamp due">Due</span></td>
-                            <td><span className="panel-link">Collect</span></td>
-                          </tr>
-                          <tr>
-                            <td className="name-cell"><span className="avatar">AV</span><span className="cell-name">Anjali Verma</span></td>
-                            <td className="cell-amount">₹800</td><td>Bank Transfer</td><td>01 Jul</td>
-                            <td><span className="stamp paid">Paid</span></td>
-                            <td><span className="panel-link">Receipt</span></td>
-                          </tr>
-                          <tr>
-                            <td className="name-cell"><span className="avatar">NJ</span><span className="cell-name">Neha Joshi</span></td>
-                            <td className="cell-amount">₹800</td><td>—</td><td>Due 30 Jun</td>
-                            <td><span className="stamp due">Due</span></td>
-                            <td><span className="panel-link">Collect</span></td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    <div className="toolbar" style={{ marginBottom: '15px' }}>
+                      <div className="filter-chips">
+                        {['all', 'paid', 'due'].map((filter) => (
+                          <div
+                            key={filter}
+                            className={`chip ${feeFilter === filter ? 'active' : ''}`}
+                            onClick={() => setFeeFilter(filter)}
+                          >
+                            {filter.toUpperCase()}
+                          </div>
+                        ))}
+                      </div>
                     </div>
+
+                    {(() => {
+                      const filteredFees = feeHistoryList.filter(fee => {
+                        if (feeFilter === 'paid') return fee.status === 'PAID';
+                        if (feeFilter === 'due') return fee.status !== 'PAID';
+                        return true;
+                      });
+
+                      return (
+                        <div className="panel">
+                          <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
+                          <table className="ledger">
+                            <thead>
+                              <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                              {filteredFees.length > 0 ? (
+                                filteredFees.map((fee, fIdx) => {
+                                  const student = studentsList.find(s => s.id === fee.studentId);
+                                  const sName = student ? student.name : 'Unknown Student';
+                                  const avatar = sName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+                                  const isPaid = fee.status === 'PAID';
+                                  const formattedDate = isPaid 
+                                    ? (fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—')
+                                    : `Due ${fee.dueDate ? new Date(fee.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}`;
+
+                                  return (
+                                    <tr key={fIdx}>
+                                      <td className="name-cell">
+                                        <span className="avatar">{avatar}</span>
+                                        <span className="cell-name">{sName}</span>
+                                      </td>
+                                      <td className="cell-amount">₹{fee.amount}</td>
+                                      <td>{fee.paymentMode || '—'}</td>
+                                      <td>{formattedDate}</td>
+                                      <td><span className={`stamp ${isPaid ? 'paid' : 'due'}`}>{isPaid ? 'Paid' : 'Due'}</span></td>
+                                      <td>
+                                        {isPaid ? (
+                                          <span className="panel-link" onClick={() => {
+                                            alert(`RECEIPT\n-----------------\nStudent: ${sName}\nAmount: ₹${fee.amount}\nPaid Amount: ₹${fee.paidAmount}\nMethod: ${fee.paymentMode}\nDate: ${fee.paymentDate}`);
+                                          }} style={{ cursor: 'pointer' }}>Receipt</span>
+                                        ) : (
+                                          <span className="panel-link" onClick={() => {
+                                            setSelectedFeeForPayment(fee);
+                                            setPayNowOpen(true);
+                                          }} style={{ cursor: 'pointer', color: 'var(--terracotta)' }}>Collect</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              ) : (
+                                <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)' }}>No payment records found.</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
                   </section>
                 )}
 
                 {/* ================= ATTENDANCE ================= */}
-                {activeView === 'attendance' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Today · 4 July</div>
-                        <h1 className="page-title">Attendance</h1>
-                      </div>
-                      <div className="topbar-actions">
-                        <div className="search">
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-                          <input placeholder="Check in by name or seat" />
+                {activeView === 'attendance' && (() => {
+                  const dailyAttendanceRecords = studentsList.map(student => {
+                    const att = attendanceList.find(a => a.studentId === student.id);
+                    return {
+                      ...student,
+                      attendanceRecord: att,
+                    };
+                  });
+                  
+                  const filteredDailyAttendance = dailyAttendanceRecords.filter(r => 
+                    r.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+                    (r.seat && r.seat.toLowerCase().includes(attendanceSearch.toLowerCase()))
+                  );
+
+                  return (
+                    <section className="view active">
+                      <div className="topbar">
+                        <div>
+                          <div className="page-eyebrow">Today · {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
+                          <h1 className="page-title">Attendance</h1>
+                        </div>
+                        <div className="topbar-actions">
+                          <div className="search">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+                            <input placeholder="Search by name or seat" value={attendanceSearch} onChange={(e) => setAttendanceSearch(e.target.value)} />
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}><div className="stat-label">Checked in</div><div className="stat-value">{studentsList.length > 0 ? 62 : 0}</div></div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--muted)' }}><div className="stat-label">Checked out</div><div className="stat-value">{studentsList.length > 0 ? 18 : 0}</div></div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{studentsList.length > 0 ? 34 : 0}</div></div>
-                    </div>
+                      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}><div className="stat-label">Checked in</div><div className="stat-value">{attendanceStats.checkedIn}</div></div>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--muted)' }}><div className="stat-label">Checked out</div><div className="stat-value">{attendanceStats.checkedOut}</div></div>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{attendanceStats.notYetArrived}</div></div>
+                      </div>
 
-                    <div className="panel">
-                      <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
-                      <table className="ledger">
-                        <thead>
-                          <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th></tr>
-                        </thead>
-                        <tbody>
-                          {studentsList.length > 0 ? (
-                            <React.Fragment>
-                              <tr><td className="cell-name">Priya Sharma</td><td>A14</td><td className="mono">09:12 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
-                              <tr><td className="cell-name">Anjali Verma</td><td>B03</td><td className="mono">08:55 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
-                              <tr><td className="cell-name">Rohit Kumar</td><td>A07</td><td className="mono">08:20 AM</td><td className="mono">12:10 PM</td><td><span className="pill inactive">Left</span></td></tr>
-                              <tr><td className="cell-name">Kavya Nair</td><td>C09</td><td className="mono">08:30 AM</td><td>—</td><td><span className="pill active">Present</span></td></tr>
-                            </React.Fragment>
-                          ) : (
-                            <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--muted)' }}>No student attendance data found.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                )}
+                      <div className="panel">
+                        <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
+                        <table className="ledger">
+                          <thead>
+                            <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th><th>Actions</th></tr>
+                          </thead>
+                          <tbody>
+                            {filteredDailyAttendance.length > 0 ? (
+                              filteredDailyAttendance.map((r, rIdx) => {
+                                const att = r.attendanceRecord;
+                                const isAbsent = att && att.status === 'ABSENT';
+                                return (
+                                  <tr key={rIdx}>
+                                    <td className="cell-name">{r.name}</td>
+                                    <td>{r.seat || '—'}</td>
+                                    <td className="mono">{att && att.checkIn ? att.checkIn : '—'}</td>
+                                    <td className="mono">{att && att.checkOut ? att.checkOut : '—'}</td>
+                                    <td>
+                                      <span className={`stamp ${isAbsent ? 'due' : (!att ? 'due' : (att.checkOut ? 'inactive' : 'active'))}`}>
+                                        {isAbsent ? 'Absent' : (!att ? 'Not Arrived' : (att.checkOut ? 'Left' : 'Present'))}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      {!att && (
+                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--teal)' }} onClick={() => {
+                                            api.attendanceApi.checkIn({ studentId: r.id })
+                                              .then(res => {
+                                                if (res.success) {
+                                                  showToast(`${r.name} checked in successfully`);
+                                                  fetchAttendanceData();
+                                                } else {
+                                                  alert(res.message);
+                                                }
+                                              })
+                                              .catch(console.error);
+                                          }}>Check In</button>
+                                        </div>
+                                      )}
+                                      {att && !isAbsent && !att.checkOut && (
+                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--terracotta)' }} onClick={() => {
+                                            api.attendanceApi.checkOut(r.id)
+                                              .then(res => {
+                                                if (res.success) {
+                                                  showToast(`${r.name} checked out successfully`);
+                                                  fetchAttendanceData();
+                                                } else {
+                                                  alert(res.message);
+                                                }
+                                              })
+                                              .catch(console.error);
+                                          }}>Check Out</button>
+                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset' }} onClick={() => {
+                                            setEditingAttendance(att);
+                                            setAttendanceForm({
+                                              status: att.status,
+                                              checkIn: att.checkIn ? att.checkIn.substring(0, 5) : '',
+                                              checkOut: att.checkOut ? att.checkOut.substring(0, 5) : ''
+                                            });
+                                            setEditAttendanceOpen(true);
+                                          }}>Edit</button>
+                                        </div>
+                                      )}
+                                      {att && (isAbsent || att.checkOut) && (
+                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                          <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                                            {isAbsent ? 'Absent' : 'Completed'}
+                                          </span>
+                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset' }} onClick={() => {
+                                            setEditingAttendance(att);
+                                            setAttendanceForm({
+                                              status: att.status,
+                                              checkIn: att.checkIn ? att.checkIn.substring(0, 5) : '',
+                                              checkOut: att.checkOut ? att.checkOut.substring(0, 5) : ''
+                                            });
+                                            setEditAttendanceOpen(true);
+                                          }}>Edit</button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)' }}>No student attendance data found.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  );
+                })()}
 
                 {/* ================= REPORTS ================= */}
                 {activeView === 'reports' && (
@@ -1496,9 +1898,6 @@ export default function App() {
                         <div className="page-eyebrow">Export</div>
                         <h1 className="page-title">Reports</h1>
                       </div>
-                      <div className="topbar-actions">
-                        <div className="chip" style={{ cursor: 'default' }}>This month ▾</div>
-                      </div>
                     </div>
 
                     <div className="report-grid">
@@ -1506,31 +1905,46 @@ export default function App() {
                         <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
                         <div className="report-name">Active students</div>
                         <div className="report-desc">Full roster of currently active members with seat and shift.</div>
-                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                        <div className="report-actions">
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('active-students', 'excel')}>Excel</button>
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('active-students', 'pdf')}>PDF</button>
+                        </div>
                       </div>
                       <div className="report-card">
                         <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg></div>
                         <div className="report-name">Vacant seats</div>
                         <div className="report-desc">Available seats by shift, updated in real time.</div>
-                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                        <div className="report-actions">
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('vacant-seats', 'excel')}>Excel</button>
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('vacant-seats', 'pdf')}>PDF</button>
+                        </div>
                       </div>
                       <div className="report-card">
                         <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
                         <div className="report-name">Fee collection</div>
                         <div className="report-desc">All payments recorded this month, grouped by method.</div>
-                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                        <div className="report-actions">
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('fee-collection', 'excel')}>Excel</button>
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('fee-collection', 'pdf')}>PDF</button>
+                        </div>
                       </div>
                       <div className="report-card">
                         <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg></div>
                         <div className="report-name">Pending fees</div>
                         <div className="report-desc">Students with fees overdue, sorted by days pending.</div>
-                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                        <div className="report-actions">
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('pending-fees', 'excel')}>Excel</button>
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('pending-fees', 'pdf')}>PDF</button>
+                        </div>
                       </div>
                       <div className="report-card">
                         <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 13l4-4 3 3 5-6" /></svg></div>
-                        <div className="report-name">Attendance summary</div>
-                        <div className="report-desc">Daily check-in trends across the selected date range.</div>
-                        <div className="report-actions"><button className="btn btn-ghost">Excel</button><button className="btn btn-ghost">PDF</button></div>
+                        <div className="report-name">Attendance log</div>
+                        <div className="report-desc">Daily check-in logs and check-out status.</div>
+                        <div className="report-actions">
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('attendance-log', 'excel')}>Excel</button>
+                          <button className="btn btn-ghost" onClick={() => handleExportReport('attendance-log', 'pdf')}>PDF</button>
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -1689,17 +2103,126 @@ export default function App() {
       </Routes>
 
       {/* ============ MODALS ============ */}
+      {seatModalOpen && (
+        <div className="modal-overlay open" onClick={(e) => { if (e.target.classList.contains('modal-overlay')) setSeatModalOpen(false); }}>
+          <div className="modal-card">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">{editingSeatId ? 'Edit Seat' : 'Create Seat'}</h3>
+                <div className="modal-sub">{editingSeatId ? 'Update details' : 'Add a new seat'}</div>
+              </div>
+              <button className="modal-close" onClick={() => setSeatModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ padding: '24px' }}>
+              <div className="form-grid">
+                <div className="field span-2">
+                  <label>Seat Number</label>
+                  <input type="text" placeholder="e.g. A01" value={seatForm.seatNumber} onChange={e => setSeatForm({...seatForm, seatNumber: e.target.value})} />
+                </div>
+                <div className="field">
+                  <label>Floor</label>
+                  <input type="text" placeholder="e.g. First Floor" value={seatForm.floor} onChange={e => setSeatForm({...seatForm, floor: e.target.value})} />
+                </div>
+                <div className="field">
+                  <label>Section</label>
+                  <input type="text" placeholder="e.g. Quiet Zone" value={seatForm.section} onChange={e => setSeatForm({...seatForm, section: e.target.value})} />
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn btn-ghost" onClick={() => setSeatModalOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => {
+                const request = editingSeatId ? api.seatApi.update(editingSeatId, seatForm) : api.seatApi.create(seatForm);
+                request.then(res => {
+                  if(res.success) {
+                    showToast(editingSeatId ? 'Seat updated' : 'Seat created');
+                    setSeatModalOpen(false);
+                    fetchSeats();
+                  } else {
+                    alert(res.message);
+                  }
+                });
+              }}>{editingSeatId ? 'Save Changes' : 'Create Seat'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewStudentOpen && (
+        <ViewStudentModal
+          open={viewStudentOpen}
+          onClose={() => setViewStudentOpen(false)}
+          student={selectedStudent}
+        />
+      )}
+
+      {editAttendanceOpen && editingAttendance && (
+        <div className="modal-overlay open" onClick={(e) => { if (e.target.classList.contains('modal-overlay')) setEditAttendanceOpen(false); }}>
+          <div className="modal-card" style={{ maxWidth: '420px' }}>
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Edit Attendance</h3>
+                <div className="modal-sub">{editingAttendance.studentName} · Seat {editingAttendance.seatNumber}</div>
+              </div>
+              <button className="modal-close" onClick={() => setEditAttendanceOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ padding: '20px' }}>
+              <div className="form-grid" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div className="field">
+                  <label>Status</label>
+                  <select value={attendanceForm.status} onChange={e => setAttendanceForm({...attendanceForm, status: e.target.value})}>
+                    <option value="PRESENT">Present</option>
+                    <option value="LEFT">Left / Checked Out</option>
+                    <option value="ABSENT">Absent</option>
+                  </select>
+                </div>
+                {attendanceForm.status !== 'ABSENT' && (
+                  <React.Fragment>
+                    <div className="field">
+                      <label>Check-in Time</label>
+                      <input type="time" value={attendanceForm.checkIn} onChange={e => setAttendanceForm({...attendanceForm, checkIn: e.target.value})} />
+                    </div>
+                    <div className="field">
+                      <label>Check-out Time</label>
+                      <input type="time" value={attendanceForm.checkOut} onChange={e => setAttendanceForm({...attendanceForm, checkOut: e.target.value})} />
+                    </div>
+                  </React.Fragment>
+                )}
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn btn-ghost" onClick={() => setEditAttendanceOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => {
+                api.attendanceApi.update(editingAttendance.id, attendanceForm)
+                  .then(res => {
+                    if (res.success) {
+                      showToast("Attendance updated successfully");
+                      setEditAttendanceOpen(false);
+                      fetchAttendanceData();
+                    } else {
+                      alert(res.message);
+                    }
+                  })
+                  .catch(console.error);
+              }}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <PayNowModal
         open={payNowOpen}
-        onClose={() => setPayNowOpen(false)}
+        onClose={() => { setPayNowOpen(false); setSelectedFeeForPayment(null); }}
         onSubmit={handlePayNowSubmit}
+        fee={selectedFeeForPayment}
       />
 
       <AddStudentModal
         open={addStudentOpen}
-        onClose={() => setAddStudentOpen(false)}
+        onClose={() => { setAddStudentOpen(false); setStudentToEdit(null); }}
         onSubmit={handleAddStudentSubmit}
         vacantSeats={fullSeats.filter(s => s.status === 'available')}
+        studentToEdit={studentToEdit}
       />
     </React.Fragment>
   );
