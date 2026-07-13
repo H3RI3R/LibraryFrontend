@@ -560,6 +560,12 @@ export default function App() {
           localStorage.setItem('token', loginData.token);
           localStorage.setItem('role', loginData.role);
 
+          if (loginData.role === 'STUDENT') {
+            navigate('/student');
+            showToast('Logged in successfully.');
+            return;
+          }
+
           // Now fetch status/details
           fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
             .then(res => res.json())
