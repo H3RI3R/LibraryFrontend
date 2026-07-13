@@ -1495,16 +1495,23 @@ export default function App() {
                     <div className="grid-2">
                       <div className="panel">
                         <div className="panel-head"><h3 className="panel-title">Monthly revenue</h3></div>
-                        {studentsList.length > 0 ? (
-                          <div className="bars">
-                            <div className="bar-col"><div className="bar" style={{ height: '52%' }}></div><div className="bar-label">Feb</div></div>
-                            <div className="bar-col"><div className="bar" style={{ height: '61%' }}></div><div className="bar-label">Mar</div></div>
-                            <div className="bar-col"><div className="bar" style={{ height: '58%' }}></div><div className="bar-label">Apr</div></div>
-                            <div className="bar-col"><div className="bar" style={{ height: '70%' }}></div><div className="bar-label">May</div></div>
-                            <div className="bar-col"><div className="bar" style={{ height: '66%' }}></div><div className="bar-label">Jun</div></div>
-                            <div className="bar-col"><div className="bar current" style={{ height: '81%' }}></div><div className="bar-label">Jul</div></div>
-                          </div>
-                        ) : (
+                        {dashboardData?.monthlyRevenue && dashboardData.monthlyRevenue.length > 0 ? (() => {
+                          const maxAmt = Math.max(...dashboardData.monthlyRevenue.map(d => d.amount || 0), 1000);
+                          return (
+                            <div className="bars">
+                              {dashboardData.monthlyRevenue.map((item, idx) => {
+                                const heightPercent = Math.min(85, Math.max(10, ((item.amount || 0) / maxAmt) * 85));
+                                const isCurrentMonth = idx === dashboardData.monthlyRevenue.length - 1;
+                                return (
+                                  <div className="bar-col" key={idx} title={`₹${item.amount}`}>
+                                    <div className={`bar ${isCurrentMonth ? 'current' : ''}`} style={{ height: `${heightPercent}%` }}></div>
+                                    <div className="bar-label">{item.month}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })() : (
                           <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
                             Revenue will appear here after your first month of collections.
                           </div>
@@ -1515,12 +1522,19 @@ export default function App() {
                           <h3 className="panel-title">Due fees</h3>
                           <span className="panel-link" onClick={() => setActiveView('fees')}>View all →</span>
                         </div>
-                        {studentsList.length > 0 ? (
+                        {dashboardData?.dueFees && dashboardData.dueFees.length > 0 ? (
                           <table className="ledger">
                             <tbody>
-                              <tr><td className="cell-name">Sahil Mehta</td><td className="cell-amount">₹1,200</td><td><span className="stamp due">Due</span></td></tr>
-                              <tr><td className="cell-name">Neha Joshi</td><td className="cell-amount">₹800</td><td><span className="stamp due">Due</span></td></tr>
-                              <tr><td className="cell-name">Aman Gupta</td><td className="cell-amount">₹1,500</td><td><span className="stamp due">Due</span></td></tr>
+                              {dashboardData.dueFees.slice(0, 3).map((item, idx) => {
+                                const foundSt = studentsList.find(s => s.id === item.studentId);
+                                return (
+                                  <tr key={idx}>
+                                    <td className="cell-name">{foundSt ? foundSt.name : `Student #${item.studentId}`}</td>
+                                    <td className="cell-amount">₹{item.dueAmount}</td>
+                                    <td><span className="stamp due">Due</span></td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         ) : (
