@@ -4,6 +4,7 @@ import Toast from './components/Toast';
 import PayNowModal from './components/PayNowModal';
 import AddStudentModal from './components/AddStudentModal';
 import ViewStudentModal from './components/ViewStudentModal';
+import StudentProfileModal from './components/StudentProfileModal';
 import api, { API_BASE_URL } from './api';
 
 // --- Default Data & Helper Functions ---
@@ -210,6 +211,7 @@ export default function App() {
   const [feeFilter, setFeeFilter] = useState('all');
   const [dashboardData, setDashboardData] = useState(null);
   const [studentDashboardData, setStudentDashboardData] = useState(null);
+  const [studentProfileOpen, setStudentProfileOpen] = useState(false);
 
   // --- Toast State ---
   const [toastMessage, setToastMessage] = useState('');
@@ -623,6 +625,40 @@ export default function App() {
 
   const handleStudentLogout = () => {
     handleLogout();
+  };
+
+  const handleStudentProfileUpdate = (updatedData) => {
+    if (!studentDashboardData || !studentDashboardData.studentId) return;
+    const payload = {
+      studentName: updatedData.studentName,
+      mobileNumber: updatedData.mobileNumber,
+      parentName: updatedData.parentName,
+      parentMobile: updatedData.parentMobile,
+      address: updatedData.address,
+      profileImage: updatedData.profileImage,
+      age: studentDashboardData.age || 20, 
+      gender: studentDashboardData.gender || 'MALE', 
+      joiningDate: studentDashboardData.joiningDate,
+      assignedSeat: studentDashboardData.assignedSeat,
+      shift: studentDashboardData.shift === 'Full day' ? 'FULL_DAY' : studentDashboardData.shift.toUpperCase(),
+      membershipStatus: studentDashboardData.membershipStatus || 'ACTIVE',
+      monthlyFee: studentDashboardData.feeDue || 800
+    };
+
+    api.studentApi.update(studentDashboardData.studentId, payload)
+      .then(res => {
+        if (res.success) {
+          showToast('Profile updated successfully.');
+          setStudentProfileOpen(false);
+          fetchStudentDashboard();
+        } else {
+          showToast(`Failed to update profile: ${res.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("Error updating student profile:", err);
+        showToast('Error updating profile.');
+      });
   };
 
 
@@ -2064,9 +2100,15 @@ export default function App() {
               </div>
             </div>
             <div className="student-header-right">
-              <div className="student-avatar-name">
-                <span className="avatar">AV</span>
-                <span>Anjali Verma</span>
+              <div className="student-avatar-name" onClick={() => setStudentProfileOpen(true)} style={{ cursor: 'pointer' }}>
+                {studentDashboardData?.profileImage ? (
+                  <img src={studentDashboardData.profileImage} alt="Profile" className="avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  <span className="avatar">
+                    {studentDashboardData?.studentName ? studentDashboardData.studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'ST'}
+                  </span>
+                )}
+                <span>{studentDashboardData?.studentName || 'Student'}</span>
               </div>
               <button className="btn btn-ghost" onClick={handleStudentLogout}>Log out</button>
             </div>
@@ -2326,6 +2368,13 @@ export default function App() {
         onClose={() => { setPayNowOpen(false); setSelectedFeeForPayment(null); }}
         onSubmit={handlePayNowSubmit}
         fee={selectedFeeForPayment}
+      />
+
+      <StudentProfileModal
+        open={studentProfileOpen}
+        onClose={() => setStudentProfileOpen(false)}
+        studentData={studentDashboardData}
+        onUpdate={handleStudentProfileUpdate}
       />
 
       <AddStudentModal
