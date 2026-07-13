@@ -2145,7 +2145,7 @@ export default function App() {
                     {!hasNoDue && (
                       <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }} onClick={() => {
                         setSelectedFeeForPayment({
-                          id: 0,
+                          id: studentDashboardData?.feeId || 0,
                           amount: stFeeDue,
                           dueAmount: stFeeDue,
                           month: new Date().getMonth() + 1,
