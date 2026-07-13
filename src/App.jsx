@@ -5,6 +5,7 @@ import PayNowModal from './components/PayNowModal';
 import AddStudentModal from './components/AddStudentModal';
 import ViewStudentModal from './components/ViewStudentModal';
 import StudentProfileModal from './components/StudentProfileModal';
+import AddFeeModal from './components/AddFeeModal';
 import api, { API_BASE_URL } from './api';
 
 // --- Default Data & Helper Functions ---
@@ -209,6 +210,7 @@ export default function App() {
   const [feeStats, setFeeStats] = useState({ collectedThisMonth: 0, totalDue: 0, studentsOverdue: 0 });
   const [feeHistoryList, setFeeHistoryList] = useState([]);
   const [feeFilter, setFeeFilter] = useState('all');
+  const [addFeeOpen, setAddFeeOpen] = useState(false);
   const [dashboardData, setDashboardData] = useState(null);
   const [studentDashboardData, setStudentDashboardData] = useState(null);
   const [studentProfileOpen, setStudentProfileOpen] = useState(false);
@@ -300,7 +302,7 @@ export default function App() {
     if (activeView === 'fees') {
       fetchFeeData();
     }
-  }, [activeView]);
+  }, [activeView, feeFilter]);
 
   const showToast = (html) => {
     setToastMessage(html);
@@ -381,7 +383,16 @@ export default function App() {
         })
         .catch(console.error);
 
-      api.feeApi.getAll()
+      let apiCall;
+      if (feeFilter === 'paid') {
+        apiCall = api.feeApi.paymentHistory();
+      } else if (feeFilter === 'due') {
+        apiCall = api.feeApi.dueList();
+      } else {
+        apiCall = api.feeApi.getAll();
+      }
+
+      apiCall
         .then(res => {
           if (res.success && Array.isArray(res.data)) {
             setFeeHistoryList(res.data);
@@ -538,6 +549,35 @@ export default function App() {
       .catch(err => {
         console.error("Payment error:", err);
         showToast('Payment processing failed.');
+      });
+  };
+
+  const handleAddFeeSubmit = (feeData) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('Session expired. Please log in again.');
+      return;
+    }
+
+    api.feeApi.create({
+      studentId: feeData.studentId,
+      month: feeData.month,
+      year: feeData.year,
+      amount: feeData.amount,
+      dueDate: feeData.dueDate
+    })
+      .then(res => {
+        if (res.success) {
+          showToast('Fee invoice created successfully.');
+          setAddFeeOpen(false);
+          fetchFeeData();
+        } else {
+          alert(res.message || 'Failed to create fee record.');
+        }
+      })
+      .catch(err => {
+        console.error("Error creating fee invoice:", err);
+        showToast('Error creating fee record.');
       });
   };
 
@@ -1782,6 +1822,7 @@ export default function App() {
                         <div className="page-eyebrow">Ledger</div>
                         <h1 className="page-title">Fees</h1>
                       </div>
+                      <button className="btn btn-primary" onClick={() => setAddFeeOpen(true)}>Create Invoice</button>
                     </div>
 
                     <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
@@ -1814,11 +1855,7 @@ export default function App() {
                     </div>
 
                     {(() => {
-                      const filteredFees = feeHistoryList.filter(fee => {
-                        if (feeFilter === 'paid') return fee.status === 'PAID';
-                        if (feeFilter === 'due') return fee.status !== 'PAID';
-                        return true;
-                      });
+                      const filteredFees = feeHistoryList;
 
                       return (
                         <div className="panel">
@@ -2368,6 +2405,13 @@ export default function App() {
         onClose={() => { setPayNowOpen(false); setSelectedFeeForPayment(null); }}
         onSubmit={handlePayNowSubmit}
         fee={selectedFeeForPayment}
+      />
+
+      <AddFeeModal
+        open={addFeeOpen}
+        onClose={() => setAddFeeOpen(false)}
+        onSubmit={handleAddFeeSubmit}
+        students={studentsList}
       />
 
       <StudentProfileModal
