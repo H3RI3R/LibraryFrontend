@@ -523,36 +523,98 @@ export default function App() {
       return;
     }
 
-    api.feeApi.pay({
-      feeId: selectedFeeForPayment.id,
-      paidAmount: amount,
-      paymentMode: method
-    })
-      .then(res => {
-        if (res.success || res.status === 'success') {
-          showToast('Payment collected successfully!');
-          setPayNowOpen(false);
-          setSelectedFeeForPayment(null);
-          fetchFeeData();
-          if (selectedStudentDetail && selectedStudentDetail.student) {
-            api.studentApi.getById(selectedStudentDetail.student.id)
-              .then(sRes => {
-                if (sRes.success) {
-                  setSelectedStudentDetail(sRes.data);
-                }
-              });
-          }
-        } else {
-          alert(res.message || 'Payment failed.');
+    // Close the modal first
+    setPayNowOpen(false);
+
+    // Step 1: Create Razorpay order from backend
+    api.feeApi.razorpayCreateOrder(selectedFeeForPayment.id)
+      .then(orderData => {
+        if (!orderData || orderData.status !== 'success') {
+          showToast('❌ Failed to initiate payment. Please try again.');
+          return;
         }
+
+        // Load Razorpay script if not already loaded
+        const loadRazorpay = () => new Promise((resolve) => {
+          if (window.Razorpay) { resolve(true); return; }
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.body.appendChild(script);
+        });
+
+        loadRazorpay().then(loaded => {
+          if (!loaded) {
+            showToast('❌ Razorpay SDK failed to load. Check your internet connection.');
+            return;
+          }
+
+          const options = {
+            key: orderData.keyId,
+            amount: orderData.amount,
+            currency: orderData.currency || 'INR',
+            name: 'StudySpace Library',
+            description: `Fee for ${selectedFeeForPayment.month}/${selectedFeeForPayment.year}`,
+            order_id: orderData.orderId,
+            prefill: {},
+            theme: { color: '#6366f1' },
+
+            // ✅ SUCCESS: signature received → verify on backend → mark PAID
+            handler: function (response) {
+              api.feeApi.razorpayVerify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                feeId: String(selectedFeeForPayment.id),
+                paymentMode: 'RAZORPAY',
+                paidAmount: String(selectedFeeForPayment.dueAmount)
+              }).then(res => {
+                if (res.status === 'success' || res.success) {
+                  showToast('✅ Payment successful! Fee marked as paid.');
+                  setSelectedFeeForPayment(null);
+                  const role = localStorage.getItem('role');
+                  if (role === 'STUDENT') {
+                    fetchStudentDashboard();
+                  } else {
+                    fetchFeeData();
+                  }
+                } else {
+                  showToast('⚠️ Payment received but verification failed. Please contact support.');
+                }
+              }).catch(() => {
+                showToast('⚠️ Verification error. Please contact support.');
+              });
+            },
+
+            // ❌ DISMISSED / GO BACK: do NOT collect fee
+            modal: {
+              ondismiss: function () {
+                showToast('🚫 Payment cancelled. No fees were collected.');
+                setSelectedFeeForPayment(null);
+              }
+            }
+          };
+
+          const rzp = new window.Razorpay(options);
+
+          // Also handle payment failure (card declined, etc.)
+          rzp.on('payment.failed', function (response) {
+            showToast(`❌ Payment failed: ${response.error.description || 'Unknown error'}`);
+            setSelectedFeeForPayment(null);
+          });
+
+          rzp.open();
+        });
       })
       .catch(err => {
-        console.error("Payment error:", err);
-        showToast('Payment processing failed.');
+        console.error('Razorpay order creation error:', err);
+        showToast('❌ Could not connect to payment server.');
       });
   };
 
   const handleAddFeeSubmit = (feeData) => {
+
     const token = localStorage.getItem('token');
     if (!token) {
       showToast('Session expired. Please log in again.');

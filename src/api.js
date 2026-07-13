@@ -1,5 +1,5 @@
-// export const API_BASE_URL = 'https://test.edu2all.in/library';
-export const API_BASE_URL = 'http://localhost:5007';
+export const API_BASE_URL = 'https://test.edu2all.in/library';
+// export const API_BASE_URL = 'http://localhost:5007';
 
 // Note: If testing locally against the Spring Boot server, change this to 'http://localhost:5007'
 
@@ -70,7 +70,14 @@ export const feeApi = {
     paymentHistory: () => apiCall('/fee/payment-history'),
     myPaymentHistory: () => apiCall('/fee/my-payment-history'),
     receipt: (feeId) => apiCall(`/fee/receipt/${feeId}`),
+    // Razorpay: Step 1 — create order
+    razorpayCreateOrder: (feeId) => {
+        return apiCall(`/fee/razorpay/create-order?feeId=${feeId}`, 'POST');
+    },
+    // Razorpay: Step 2 — verify payment signature and mark fee PAID
+    razorpayVerify: (body) => apiCall('/fee/razorpay/verify', 'POST', body),
 };
+
 
 // Attendance API
 export const attendanceApi = {
