@@ -373,7 +373,7 @@ export default function App() {
     if (token) {
       api.feeApi.dashboard()
         .then(res => {
-          if (res.success && res.data) {
+          if ((res.success || res.status === 'success') && res.data) {
             setFeeStats({
               collectedThisMonth: res.data.collectedThisMonth || 0,
               totalDue: res.data.totalDue || 0,
@@ -394,7 +394,7 @@ export default function App() {
 
       apiCall
         .then(res => {
-          if (res.success && Array.isArray(res.data)) {
+          if ((res.success || res.status === 'success') && Array.isArray(res.data)) {
             setFeeHistoryList(res.data);
           } else {
             setFeeHistoryList([]);
@@ -529,7 +529,7 @@ export default function App() {
       paymentMode: method
     })
       .then(res => {
-        if (res.success) {
+        if (res.success || res.status === 'success') {
           showToast('Payment collected successfully!');
           setPayNowOpen(false);
           setSelectedFeeForPayment(null);
@@ -567,7 +567,7 @@ export default function App() {
       dueDate: feeData.dueDate
     })
       .then(res => {
-        if (res.success) {
+        if (res.success || res.status === 'success') {
           showToast('Fee invoice created successfully.');
           setAddFeeOpen(false);
           fetchFeeData();
