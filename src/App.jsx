@@ -163,23 +163,16 @@ export default function App() {
                 status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
               }));
               setStudentsList(mapped);
-
-              // Update the fullSeats map based on occupied seats of active students
-              const updatedSeats = buildEmptySeats(totalSeats);
-              const finalSeats = updatedSeats.map(seat => {
-                const foundStudent = mapped.find(st => st.seat === seat.label);
-                if (foundStudent) {
-                  return { ...seat, status: 'occupied', student: foundStudent.name };
-                }
-                return seat;
-              });
-              setFullSeats(finalSeats);
             }
           })
           .catch(err => console.error("Error fetching students:", err));
+        
+        fetchDashboardData();
       }
+    } else if (location.pathname === '/student') {
+      fetchStudentDashboard();
     }
-  }, [location.pathname, totalSeats]);
+  }, [location.pathname]);
 
 
 
@@ -199,6 +192,8 @@ export default function App() {
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [payNowOpen, setPayNowOpen] = useState(false);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
+  const [viewStudentOpen, setViewStudentOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentToEdit, setStudentToEdit] = useState(null);
   const [seatModalOpen, setSeatModalOpen] = useState(false);
   const [editingSeatId, setEditingSeatId] = useState(null);
@@ -213,6 +208,8 @@ export default function App() {
   const [feeStats, setFeeStats] = useState({ collectedThisMonth: 0, totalDue: 0, studentsOverdue: 0 });
   const [feeHistoryList, setFeeHistoryList] = useState([]);
   const [feeFilter, setFeeFilter] = useState('all');
+  const [dashboardData, setDashboardData] = useState(null);
+  const [studentDashboardData, setStudentDashboardData] = useState(null);
 
   // --- Toast State ---
   const [toastMessage, setToastMessage] = useState('');
@@ -239,7 +236,59 @@ export default function App() {
   const occupiedCount = fullSeats.filter(s => s.status === 'occupied' || s.status === 'due').length;
   const feesDueSum = fullSeats.filter(s => s.status === 'due').length * 800; // Mock calculation based on due count
 
+  const fetchDashboardData = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.dashboardApi.get()
+        .then(res => {
+          if (res.success && res.data) {
+            setDashboardData(res.data);
+            
+            // Map seats to match UI format
+            if (Array.isArray(res.data.seats)) {
+              const mappedSeats = res.data.seats.map(s => {
+                const foundStudent = studentsList.find(st => st.id === s.studentId);
+                return {
+                  id: s.id,
+                  label: s.seatNumber,
+                  floor: s.floor,
+                  section: s.section,
+                  status: s.status === 'AVAILABLE' ? 'available' : s.status === 'OCCUPIED' ? 'occupied' : 'due',
+                  student: foundStudent ? foundStudent.name : (s.studentId ? 'Occupied' : null)
+                };
+              });
+              setDashSeats(mappedSeats.slice(0, 36));
+              setFullSeats(mappedSeats);
+            }
+
+            // Sync stats
+            setTotalSeats(res.data.totalSeats || 0);
+            if (res.data.activities) {
+              setActivityFeed(res.data.activities);
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  };
+
+  const fetchStudentDashboard = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.dashboardApi.get()
+        .then(res => {
+          if (res.success && res.data) {
+            setStudentDashboardData(res.data);
+          }
+        })
+        .catch(console.error);
+    }
+  };
+
   useEffect(() => {
+    if (activeView === 'dashboard') {
+      fetchDashboardData();
+    }
     if (activeView === 'attendance' || activeView === 'seats') {
       fetchAttendanceData();
     }
@@ -1381,25 +1430,25 @@ export default function App() {
                     <div className="stat-strip">
                       <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
                         <div className="stat-label">Total Seats</div>
-                        <div className="stat-value">{totalSeats}</div>
+                        <div className="stat-value">{dashboardData ? dashboardData.totalSeats : totalSeats}</div>
                       </div>
                       <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
                         <div className="stat-label">Occupied</div>
                         <div className="stat-value">
-                          {occupiedCount} <span className="stat-suffix">/ {totalSeats}</span>
+                          {dashboardData ? dashboardData.occupiedSeats : occupiedCount} <span className="stat-suffix">/ {dashboardData ? dashboardData.totalSeats : totalSeats}</span>
                         </div>
                       </div>
                       <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
                         <div className="stat-label">Total Students</div>
-                        <div className="stat-value">{studentsList.length}</div>
+                        <div className="stat-value">{dashboardData ? dashboardData.totalStudents : studentsList.length}</div>
                       </div>
                       <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
                         <div className="stat-label">Fees Due</div>
-                        <div className="stat-value">₹{Number(feesDueSum).toLocaleString('en-IN')}</div>
+                        <div className="stat-value">₹{Number(dashboardData ? dashboardData.feesDue : feesDueSum).toLocaleString('en-IN')}</div>
                       </div>
                       <div className="stat-card" style={{ '--stat-color': 'var(--ink)' }}>
                         <div className="stat-label">Today's Attendance</div>
-                        <div className="stat-value">{studentsList.length > 0 ? 62 : 0}</div>
+                        <div className="stat-value">{dashboardData ? dashboardData.todayAttendanceCheckedIn : 0}</div>
                       </div>
                     </div>
 
@@ -1530,7 +1579,17 @@ export default function App() {
                                   {s.status === 'active' ? 'Active' : 'Inactive'}
                                 </span>
                               </td>
-                              <td><span className="panel-link">View</span></td>
+                              <td>
+                                <span
+                                  className="panel-link"
+                                  onClick={() => {
+                                    setSelectedStudent(s);
+                                    setViewStudentOpen(true);
+                                  }}
+                                >
+                                  View
+                                </span>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -2001,51 +2060,65 @@ export default function App() {
 
           <main className="student-content">
             {/* ================= STUDENT: OVERVIEW ================= */}
-            {studentView === 'overview' && (
-              <section className="sview active">
-                <div className="page-eyebrow">Saturday, 4 July</div>
-                <h1 className="page-title" style={{ marginBottom: '22px' }}>Hi, Anjali</h1>
+            {studentView === 'overview' && (() => {
+              const data = studentDashboardData || {};
+              const stFeeDue = data.feeDue !== undefined ? data.feeDue : 0;
+              const hasNoDue = stFeeDue <= 0;
+              return (
+                <section className="sview active">
+                  <div className="page-eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                  <h1 className="page-title" style={{ marginBottom: '22px' }}>Hi, {data.studentName || 'Student'}</h1>
 
-                <div className={`sub-card ${isSubPaid ? 'paid' : ''}`}>
-                  <div className="sub-card-top">
-                    <div>
-                      <div className="sub-card-label">This month's subscription</div>
-                      <div className="sub-card-amount">₹800</div>
-                      <div className="sub-card-due">
-                        {isSubPaid ? 'Paid for July ✓' : <span>Due on <b>10 July</b></span>}
+                  <div className={`sub-card ${hasNoDue ? 'paid' : ''}`}>
+                    <div className="sub-card-top">
+                      <div>
+                        <div className="sub-card-label">This month's subscription</div>
+                        <div className="sub-card-amount">₹{hasNoDue ? 800 : stFeeDue}</div>
+                        <div className="sub-card-due">
+                          {hasNoDue ? 'Paid for this month ✓' : <span>Due amount is pending</span>}
+                        </div>
                       </div>
+                      <span className={`stamp ${hasNoDue ? 'paid' : 'due'}`}>{hasNoDue ? 'Paid' : 'Due'}</span>
                     </div>
-                    <span className={`stamp ${isSubPaid ? 'paid' : 'due'}`}>{isSubPaid ? 'Paid' : 'Due'}</span>
+                    {!hasNoDue && (
+                      <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }} onClick={() => {
+                        setSelectedFeeForPayment({
+                          id: 0,
+                          amount: stFeeDue,
+                          dueAmount: stFeeDue,
+                          month: new Date().getMonth() + 1,
+                          year: new Date().getFullYear()
+                        });
+                        setPayNowOpen(true);
+                      }}>Pay ₹{stFeeDue} now</button>
+                    )}
                   </div>
-                  {!isSubPaid && (
-                    <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }} onClick={() => setPayNowOpen(true)}>Pay ₹800 now</button>
-                  )}
-                </div>
 
-                <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginTop: '20px' }}>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
-                    <div className="stat-label">Your seat</div>
-                    <div className="stat-value" style={{ fontSize: '20px' }}>B03</div>
+                  <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginTop: '20px' }}>
+                    <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
+                      <div className="stat-label">Your seat</div>
+                      <div className="stat-value" style={{ fontSize: '20px' }}>{data.assignedSeat || '—'}</div>
+                    </div>
+                    <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
+                      <div className="stat-label">Shift</div>
+                      <div className="stat-value" style={{ fontSize: '20px' }}>{data.shift || '—'}</div>
+                    </div>
+                    <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
+                      <div className="stat-label">Attendance this month</div>
+                      <div className="stat-value" style={{ fontSize: '20px' }}>{data.attendanceDaysThisMonth !== undefined ? data.attendanceDaysThisMonth : 0} days</div>
+                    </div>
                   </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
-                    <div className="stat-label">Shift</div>
-                    <div className="stat-value" style={{ fontSize: '20px' }}>Evening</div>
-                  </div>
-                  <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
-                    <div className="stat-label">Attendance this month</div>
-                    <div className="stat-value" style={{ fontSize: '20px' }}>21 days</div>
-                  </div>
-                </div>
 
-                <div className="panel" style={{ marginTop: '20px' }}>
-                  <div className="panel-head"><h3 className="panel-title">Membership details</h3></div>
-                  <div className="seat-detail-row"><span>Member since</span><b>20 Mar 2026</b></div>
-                  <div className="seat-detail-row"><span>Parent / guardian</span><b>Suresh Verma</b></div>
-                  <div className="seat-detail-row"><span>Registered mobile</span><b>97112 44556</b></div>
-                  <div className="seat-detail-row"><span>Membership status</span><b>Active</b></div>
-                </div>
-              </section>
-            )}
+                  <div className="panel" style={{ marginTop: '20px' }}>
+                    <div className="panel-head"><h3 className="panel-title">Membership details</h3></div>
+                    <div className="seat-detail-row"><span>Member since</span><b>{data.joiningDate || '—'}</b></div>
+                    <div className="seat-detail-row"><span>Parent / guardian</span><b>{data.parentName || '—'}</b></div>
+                    <div className="seat-detail-row"><span>Registered mobile</span><b>{data.mobileNumber || '—'}</b></div>
+                    <div className="seat-detail-row"><span>Membership status</span><b>{data.membershipStatus || '—'}</b></div>
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* ================= STUDENT: PAYMENTS ================= */}
             {studentView === 'payments' && (
@@ -2059,16 +2132,27 @@ export default function App() {
                       <tr><th>Month</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
                     </thead>
                     <tbody>
-                      {studentPaymentHistory.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="cell-name">{item.month}</td>
-                          <td className="cell-amount">{item.amount}</td>
-                          <td>{item.method}</td>
-                          <td>{item.date}</td>
-                          <td><span className="stamp paid">{item.status}</span></td>
-                          <td><span className="panel-link">Receipt</span></td>
-                        </tr>
-                      ))}
+                      {studentDashboardData?.paymentHistory && studentDashboardData.paymentHistory.length > 0 ? (
+                        studentDashboardData.paymentHistory.map((item, idx) => {
+                          const formattedDate = item.paymentDate ? new Date(item.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
+                          return (
+                            <tr key={idx}>
+                              <td className="cell-name">{item.month}/{item.year}</td>
+                              <td className="cell-amount">₹{item.amount}</td>
+                              <td>{item.paymentMode || '—'}</td>
+                              <td>{formattedDate}</td>
+                              <td><span className="stamp paid">Paid</span></td>
+                              <td>
+                                <span className="panel-link" onClick={() => {
+                                  alert(`RECEIPT\n-----------------\nStudent: ${studentDashboardData.studentName}\nAmount: ₹${item.amount}\nPaid Amount: ₹${item.paidAmount}\nMethod: ${item.paymentMode}\nDate: ${item.paymentDate}`);
+                                }} style={{ cursor: 'pointer' }}>Receipt</span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)' }}>No payment records found.</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2087,10 +2171,17 @@ export default function App() {
                       <tr><th>Date</th><th>Check-in</th><th>Check-out</th></tr>
                     </thead>
                     <tbody>
-                      <tr><td className="cell-name">04 Jul</td><td className="mono">02:05 PM</td><td>—</td></tr>
-                      <tr><td className="cell-name">03 Jul</td><td className="mono">02:10 PM</td><td className="mono">08:55 PM</td></tr>
-                      <tr><td className="cell-name">02 Jul</td><td className="mono">02:00 PM</td><td className="mono">09:02 PM</td></tr>
-                      <tr><td className="cell-name">01 Jul</td><td className="mono">02:15 PM</td><td className="mono">08:40 PM</td></tr>
+                      {studentDashboardData?.attendanceHistory && studentDashboardData.attendanceHistory.length > 0 ? (
+                        studentDashboardData.attendanceHistory.map((item, idx) => (
+                          <tr key={idx}>
+                            <td className="cell-name">{new Date(item.attendanceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</td>
+                            <td className="mono">{item.checkIn || '—'}</td>
+                            <td className="mono">{item.checkOut || '—'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr><td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)' }}>No attendance records found.</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
