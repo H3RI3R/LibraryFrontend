@@ -26,6 +26,22 @@ function buildSeats(count) {
   return seats;
 }
 
+function parseDateDMY(dateStr) {
+  if (!dateStr) return null;
+  if (typeof dateStr !== 'string') return new Date(dateStr);
+  if (dateStr.includes('-')) {
+    return new Date(dateStr);
+  }
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  }
+  return new Date(dateStr);
+}
+
 function buildEmptySeats(count) {
   const seats = [];
   for (let i = 1; i <= count; i++) {
@@ -161,7 +177,7 @@ export default function App() {
                 mobile: s.mobileNumber,
                 shift: s.shift,
                 seat: s.assignedSeat,
-                joined: s.joiningDate ? new Date(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+                joined: s.joiningDate ? parseDateDMY(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
                 status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
               }));
               setStudentsList(mapped);
@@ -807,7 +823,7 @@ export default function App() {
             mobile: s.mobileNumber,
             shift: s.shift,
             seat: s.assignedSeat,
-            joined: s.joiningDate ? new Date(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+            joined: s.joiningDate ? parseDateDMY(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
             status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
           };
           setStudentsList([newStudent, ...studentsList]);
