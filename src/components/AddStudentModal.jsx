@@ -12,6 +12,9 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
   const [status, setStatus] = useState('active');
   const [monthlyFee, setMonthlyFee] = useState(800);
   const [profileImage, setProfileImage] = useState('');
+  const [email, setEmail] = useState('');
+  const [gender, setGender] = useState('Male');
+  const [age, setAge] = useState(20);
 
   useEffect(() => {
     if (open) {
@@ -39,6 +42,9 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
         setStatus(studentToEdit.status || 'active');
         setMonthlyFee(studentToEdit.monthlyFee || 800);
         setProfileImage(studentToEdit.profileImage || '');
+        setEmail(studentToEdit.email || '');
+        setGender(studentToEdit.gender || 'Male');
+        setAge(studentToEdit.age || 20);
       } else {
         setName('');
         setMobile('');
@@ -50,6 +56,9 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
         setStatus('active');
         setMonthlyFee(800);
         setProfileImage('');
+        setEmail('');
+        setGender('Male');
+        setAge(20);
       }
     }
   }, [open, studentToEdit]);
@@ -90,7 +99,10 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
       parentMobile,
       address,
       monthlyFee,
-      profileImage
+      profileImage,
+      email,
+      gender,
+      age
     });
   };
 
@@ -125,6 +137,22 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
               <div className="field span-2">
                 <label>Student name</label>
                 <input type="text" placeholder="e.g. Kavya Nair" value={name} onChange={(e) => setName(e.target.value)} required />
+              </div>
+              <div className="field">
+                <label>Email Address</label>
+                <input type="email" placeholder="e.g. kavya@test.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+              <div className="field">
+                <label>Age</label>
+                <input type="number" placeholder="20" value={age} onChange={(e) => setAge(Number(e.target.value))} required />
+              </div>
+              <div className="field">
+                <label>Gender</label>
+                <select value={gender} onChange={(e) => setGender(e.target.value)}>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
               <div className="field">
                 <label>Mobile number</label>

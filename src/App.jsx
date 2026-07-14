@@ -781,7 +781,12 @@ export default function App() {
       joiningDate: studentData.joinedRaw || new Date().toISOString().split('T')[0],
       assignedSeat: studentData.seat,
       shift: studentData.shift === 'Full day' ? 'FULL_DAY' : studentData.shift.toUpperCase(),
-      membershipStatus: studentData.status ? studentData.status.toUpperCase() : 'ACTIVE'
+      membershipStatus: studentData.status ? studentData.status.toUpperCase() : 'ACTIVE',
+      email: studentData.email,
+      gender: studentData.gender ? studentData.gender.toUpperCase() : 'MALE',
+      age: studentData.age || 20,
+      monthlyFee: studentData.monthlyFee || 800,
+      profileImage: studentData.profileImage
     };
 
     fetch(`${API_BASE_URL}/api/student`, {
