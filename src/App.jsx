@@ -262,7 +262,7 @@ export default function App() {
         })
           .then(res => res.json())
           .then(resData => {
-            if (resData.success && Array.isArray(resData.data)) {
+            if ((resData.success || resData.status === 'success') && Array.isArray(resData.data)) {
               const mapped = resData.data.map(s => ({
                 id: s.id,
                 name: s.studentName,
@@ -270,7 +270,14 @@ export default function App() {
                 shift: s.shift,
                 seat: s.assignedSeat,
                 joined: s.joiningDate ? parseDateDMY(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
-                status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
+                status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active',
+                profileImage: s.profileImage,
+                email: s.email,
+                gender: s.gender,
+                age: s.age,
+                parentName: s.parentName,
+                parentMobile: s.parentMobile,
+                address: s.address
               }));
               setStudentsList(mapped);
             }
@@ -955,23 +962,28 @@ export default function App() {
 
   const handleStudentProfileUpdate = (updatedData) => {
     if (!studentDashboardData || !studentDashboardData.studentId) return;
-    const payload = {
-      studentName: updatedData.studentName,
-      mobileNumber: updatedData.mobileNumber,
-      parentName: updatedData.parentName,
-      parentMobile: updatedData.parentMobile,
-      address: updatedData.address,
-      profileImage: updatedData.profileImage,
-      age: studentDashboardData.age || 20, 
-      gender: studentDashboardData.gender || 'MALE', 
-      joiningDate: studentDashboardData.joiningDate,
-      assignedSeat: studentDashboardData.assignedSeat,
-      shift: studentDashboardData.shift === 'Full day' ? 'FULL_DAY' : studentDashboardData.shift.toUpperCase(),
-      membershipStatus: studentDashboardData.membershipStatus || 'ACTIVE',
-      monthlyFee: studentDashboardData.feeDue || 800
-    };
+    
+    const formData = new FormData();
+    formData.append('studentName', updatedData.studentName);
+    formData.append('mobileNumber', updatedData.mobileNumber);
+    formData.append('parentName', updatedData.parentName || '');
+    formData.append('parentMobile', updatedData.parentMobile || '');
+    formData.append('address', updatedData.address || '');
+    formData.append('age', studentDashboardData.age || 20);
+    formData.append('gender', studentDashboardData.gender || 'MALE');
+    formData.append('joiningDate', studentDashboardData.joiningDate || '');
+    formData.append('assignedSeat', studentDashboardData.assignedSeat || '');
+    formData.append('shift', studentDashboardData.shift === 'Full day' ? 'FULL_DAY' : (studentDashboardData.shift ? studentDashboardData.shift.toUpperCase() : 'FULL_DAY'));
+    formData.append('membershipStatus', studentDashboardData.membershipStatus || 'ACTIVE');
+    formData.append('monthlyFee', studentDashboardData.monthlyFee || 800);
 
-    api.studentApi.update(studentDashboardData.studentId, payload)
+    if (updatedData.imageFile) {
+      formData.append('imageFile', updatedData.imageFile);
+    } else if (updatedData.profileImage) {
+      formData.append('profileImage', updatedData.profileImage);
+    }
+
+    api.studentApi.update(studentDashboardData.studentId, formData)
       .then(res => {
         if (res.success || res.status === 'success') {
           showToast('Profile updated successfully.');
@@ -987,8 +999,6 @@ export default function App() {
       });
   };
 
-
-
   const handleAddStudentSubmit = (studentData) => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -996,34 +1006,37 @@ export default function App() {
       return;
     }
 
-    const payload = {
-      studentName: studentData.name,
-      mobileNumber: studentData.mobile,
-      parentName: studentData.parentName || 'Parent Name',
-      parentMobile: studentData.parentMobile || '9999999999',
-      address: studentData.address || 'Address',
-      joiningDate: studentData.joinedRaw || new Date().toISOString().split('T')[0],
-      assignedSeat: studentData.seat,
-      shift: studentData.shift === 'Full day' ? 'FULL_DAY' : studentData.shift.toUpperCase(),
-      membershipStatus: studentData.status ? studentData.status.toUpperCase() : 'ACTIVE',
-      email: studentData.email,
-      gender: studentData.gender ? studentData.gender.toUpperCase() : 'MALE',
-      age: studentData.age || 20,
-      monthlyFee: studentData.monthlyFee || 800,
-      profileImage: studentData.profileImage
-    };
+    const formData = new FormData();
+    formData.append('studentName', studentData.name);
+    formData.append('mobileNumber', studentData.mobile);
+    formData.append('parentName', studentData.parentName || 'Parent Name');
+    formData.append('parentMobile', studentData.parentMobile || '9999999999');
+    formData.append('address', studentData.address || 'Address');
+    formData.append('joiningDate', studentData.joinedRaw || new Date().toISOString().split('T')[0]);
+    formData.append('assignedSeat', studentData.seat);
+    formData.append('shift', studentData.shift === 'Full day' ? 'FULL_DAY' : studentData.shift.toUpperCase());
+    formData.append('membershipStatus', studentData.status ? studentData.status.toUpperCase() : 'ACTIVE');
+    formData.append('email', studentData.email);
+    formData.append('gender', studentData.gender ? studentData.gender.toUpperCase() : 'MALE');
+    formData.append('age', studentData.age || 20);
+    formData.append('monthlyFee', studentData.monthlyFee || 800);
+
+    if (studentData.imageFile) {
+      formData.append('imageFile', studentData.imageFile);
+    } else if (studentData.profileImage) {
+      formData.append('profileImage', studentData.profileImage);
+    }
 
     fetch(`${API_BASE_URL}/api/student`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': token
       },
-      body: JSON.stringify(payload)
+      body: formData
     })
       .then(res => res.json())
       .then(resData => {
-        if (resData.success) {
+        if (resData.success || resData.status === 'success') {
           const s = resData.data;
           const newStudent = {
             id: s.id,
@@ -1032,7 +1045,8 @@ export default function App() {
             shift: s.shift,
             seat: s.assignedSeat,
             joined: s.joiningDate ? parseDateDMY(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
-            status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active'
+            status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active',
+            profileImage: s.profileImage
           };
           setStudentsList([newStudent, ...studentsList]);
 
@@ -1941,9 +1955,13 @@ export default function App() {
                           {filteredStudents.map((s, idx) => (
                             <tr key={idx}>
                               <td className="name-cell">
-                                <span className="avatar">
-                                  {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-                                </span>
+                                {s.profileImage ? (
+                                  <img src={s.profileImage} alt="Avatar" className="avatar" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                                ) : (
+                                  <span className="avatar">
+                                    {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                                  </span>
+                                )}
                                 <span className="cell-name">{s.name}</span>
                               </td>
                               <td className="mono">{s.mobile}</td>

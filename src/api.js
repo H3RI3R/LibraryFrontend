@@ -12,12 +12,24 @@ export const getAuthHeaders = () => {
 };
 
 export const apiCall = async (endpoint, method = 'GET', body = null) => {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+        headers['Authorization'] = token;
+    }
+
     const options = {
         method,
-        headers: getAuthHeaders(),
+        headers,
     };
+
     if (body) {
-        options.body = JSON.stringify(body);
+        if (body instanceof FormData) {
+            options.body = body;
+        } else {
+            headers['Content-Type'] = 'application/json';
+            options.body = JSON.stringify(body);
+        }
     }
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, options);

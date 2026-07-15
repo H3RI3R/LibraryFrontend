@@ -8,6 +8,8 @@ export default function StudentProfileModal({ open, onClose, studentData, onUpda
   const [address, setAddress] = useState('');
   const [profileImage, setProfileImage] = useState('');
 
+  const [imageFile, setImageFile] = useState(null);
+
   useEffect(() => {
     if (open && studentData) {
       setName(studentData.studentName || '');
@@ -16,6 +18,7 @@ export default function StudentProfileModal({ open, onClose, studentData, onUpda
       setParentMobile(studentData.parentMobile || '');
       setAddress(studentData.address || '');
       setProfileImage(studentData.profileImage || '');
+      setImageFile(null);
     }
   }, [open, studentData]);
 
@@ -24,6 +27,7 @@ export default function StudentProfileModal({ open, onClose, studentData, onUpda
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfileImage(reader.result);
@@ -40,7 +44,8 @@ export default function StudentProfileModal({ open, onClose, studentData, onUpda
       parentName,
       parentMobile,
       address,
-      profileImage
+      profileImage,
+      imageFile
     });
   };
 

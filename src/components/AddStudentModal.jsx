@@ -16,8 +16,11 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
   const [gender, setGender] = useState('Male');
   const [age, setAge] = useState(20);
 
+  const [imageFile, setImageFile] = useState(null);
+
   useEffect(() => {
     if (open) {
+      setImageFile(null);
       if (studentToEdit) {
         setName(studentToEdit.name || '');
         setMobile(studentToEdit.mobile || '');
@@ -74,6 +77,7 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfileImage(reader.result);
@@ -100,6 +104,7 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
       address,
       monthlyFee,
       profileImage,
+      imageFile,
       email,
       gender,
       age

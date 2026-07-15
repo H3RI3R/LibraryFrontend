@@ -15,9 +15,13 @@ export default function ViewStudentModal({ open, onClose, student }) {
         </div>
         <div className="modal-body" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color, #eee)' }}>
-            <span className="avatar" style={{ width: '64px', height: '64px', fontSize: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', backgroundColor: 'var(--accent-tint, #e0f2fe)', color: 'var(--accent, #0284c7)' }}>
-              {student.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-            </span>
+            {student.profileImage ? (
+              <img src={student.profileImage} alt="Avatar" style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <span className="avatar" style={{ width: '64px', height: '64px', fontSize: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', backgroundColor: 'var(--accent-tint, #e0f2fe)', color: 'var(--accent, #0284c7)' }}>
+                {student.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+              </span>
+            )}
             <div>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>{student.name}</h2>
               <span className={`pill ${student.status}`} style={{ marginTop: '4px', display: 'inline-block' }}>
