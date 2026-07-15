@@ -104,7 +104,7 @@ export default function App() {
 
   // --- Login State ---
   const [loginRole, setLoginRole] = useState('owner'); // 'owner' or 'student'
-  const [loginTab, setLoginTab] = useState('mobile'); // 'mobile' or 'email'
+  const [loginTab, setLoginTab] = useState('email'); // 'mobile' or 'email'
   const [ownerMobile, setOwnerMobile] = useState('98110 22341');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('••••••••');
@@ -1336,14 +1336,17 @@ export default function App() {
                 <div>
                   <div className="login-eyebrow">Welcome back</div>
                   <h1 className="login-title">Log in to your desk</h1>
-                  <div className="login-sub">Enter your registered mobile number or email to access your account.</div>
+                  <div className="login-sub">Enter your registered email to access your account.</div>
 
+                  {/*
                   <div className="login-tabs">
                     <div className={`login-tab ${loginTab === 'mobile' ? 'active' : ''}`} onClick={() => setLoginTab('mobile')}>Mobile number</div>
                     <div className={`login-tab ${loginTab === 'email' ? 'active' : ''}`} onClick={() => setLoginTab('email')}>Email</div>
                   </div>
+                  */}
 
                   <form onSubmit={handleOwnerLogin}>
+                    {/*
                     {loginTab === 'mobile' ? (
                       <div className="field">
                         <label>Mobile number</label>
@@ -1355,6 +1358,11 @@ export default function App() {
                         <input type="email" placeholder="ritik@sunrisereading.in" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} />
                       </div>
                     )}
+                    */}
+                    <div className="field">
+                      <label>Email address</label>
+                      <input type="email" placeholder="ritik@sunrisereading.in" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} required />
+                    </div>
                     <div className="field">
                       <label>Password</label>
                       <input type="password" placeholder="••••••••" value={ownerPassword} onChange={(e) => setOwnerPassword(e.target.value)} />
