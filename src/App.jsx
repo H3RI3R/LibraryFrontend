@@ -164,6 +164,16 @@ export default function App() {
   const [ownerName, setOwnerName] = useState('Ritik');
   const [totalSeats, setTotalSeats] = useState(120);
   const [isTrialExpired, setIsTrialExpired] = useState(false);
+  const [settingsData, setSettingsData] = useState({
+    libraryName: '',
+    address: '',
+    city: '',
+    state: '',
+    planName: '',
+    planStatus: '',
+    endDate: ''
+  });
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   // --- Seats Caching ---
   const [dashSeats, setDashSeats] = useState([]);
@@ -192,6 +202,27 @@ export default function App() {
       localStorage.removeItem('session_expired_toast');
       showToast('Session expired. Please log in again.');
     }
+  }, []);
+
+  // Global Route Guard to redirect if token is missing
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if ((location.pathname === '/dashboard' || location.pathname === '/student') && !token) {
+      navigate('/login');
+    }
+  }, [location.pathname, navigate]);
+
+  // Synchronize logout across multiple tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'token' && !e.newValue) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('role');
+        window.location.href = '/';
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   // Fetch plans from backend on wizard activation
@@ -366,6 +397,41 @@ export default function App() {
     }
   };
 
+  const fetchSettingsData = () => {
+    setSettingsLoading(true);
+    api.libraryApi.getSettings()
+      .then(res => {
+        if ((res.success || res.status === 'success') && res.data) {
+          setSettingsData(res.data);
+          setLibraryName(res.data.libraryName);
+          setLibraryCity(res.data.city);
+        }
+      })
+      .catch(console.error)
+      .finally(() => setSettingsLoading(false));
+  };
+
+  const handleUpdateSettings = (e) => {
+    e.preventDefault();
+    setSettingsLoading(true);
+    api.libraryApi.updateSettings({
+      libraryName: settingsData.libraryName,
+      address: settingsData.address,
+      city: settingsData.city,
+      state: settingsData.state
+    })
+      .then(res => {
+        if (res.success || res.status === 'success') {
+          showToast('Settings updated successfully!');
+          fetchSettingsData();
+        } else {
+          showToast(res.message || 'Failed to update settings');
+        }
+      })
+      .catch(() => showToast('Error updating settings'))
+      .finally(() => setSettingsLoading(false));
+  };
+
   useEffect(() => {
     if (activeView === 'dashboard') {
       fetchDashboardData();
@@ -378,6 +444,9 @@ export default function App() {
     }
     if (activeView === 'fees') {
       fetchFeeData();
+    }
+    if (activeView === 'settings') {
+      fetchSettingsData();
     }
   }, [activeView, feeFilter]);
 
@@ -2314,11 +2383,92 @@ export default function App() {
                         <h1 className="page-title">Settings</h1>
                       </div>
                     </div>
-                    <div className="panel">
-                      <div className="panel-head"><h3 className="panel-title">Library details</h3></div>
-                      <p style={{ color: 'var(--muted)', fontSize: '13.5px' }}>
-                        Library name, shift timings, fee structure, backup schedule, and staff accounts will live here in the full build.
-                      </p>
+
+                    {/* Subscription Status Card */}
+                    <div className="panel" style={{ marginBottom: '24px', padding: '24px' }}>
+                      <div className="panel-head" style={{ marginBottom: '16px' }}>
+                        <h3 className="panel-title">Current Subscription</h3>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                        <div>
+                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--ink)' }}>
+                            {settingsData.planName || 'Free Trial'} Plan
+                            <span className="badge" style={{
+                              marginLeft: '12px',
+                              background: settingsData.planStatus === 'ACTIVE' ? 'var(--teal-tint)' : 'var(--mustard-tint)',
+                              color: settingsData.planStatus === 'ACTIVE' ? 'var(--teal)' : 'var(--mustard)',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}>
+                              {settingsData.planStatus || 'TRIAL'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
+                            {settingsData.planStatus === 'EXPIRED' ? 'Subscription expired on' : 'Plan renews/expires on'}: <strong>{settingsData.endDate || 'N/A'}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Library details settings form */}
+                    <div className="panel" style={{ padding: '24px' }}>
+                      <div className="panel-head" style={{ marginBottom: '16px' }}><h3 className="panel-title">Library Details</h3></div>
+                      <form onSubmit={handleUpdateSettings}>
+                        <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                          <div className="field span-2">
+                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Library Name</label>
+                            <input
+                              type="text"
+                              value={settingsData.libraryName || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, libraryName: e.target.value })}
+                              required
+                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>City</label>
+                            <input
+                              type="text"
+                              value={settingsData.city || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, city: e.target.value })}
+                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>State</label>
+                            <input
+                              type="text"
+                              value={settingsData.state || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, state: e.target.value })}
+                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                            />
+                          </div>
+
+                          <div className="field span-2">
+                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Full Address</label>
+                            <textarea
+                              rows="3"
+                              value={settingsData.address || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, address: e.target.value })}
+                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                            ></textarea>
+                          </div>
+                        </div>
+
+                        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={settingsLoading}
+                          >
+                            {settingsLoading ? 'Saving...' : 'Save Settings'}
+                          </button>
+                        </div>
+                      </form>
                     </div>
                   </section>
                 )}

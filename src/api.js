@@ -103,6 +103,11 @@ export const dashboardApi = {
     get: () => apiCall('/dashboard')
 };
 
+export const libraryApi = {
+    getSettings: () => apiCall('/api/library/settings'),
+    updateSettings: (data) => apiCall('/api/library/settings', 'PUT', data)
+};
+
 export default {
     studentApi,
     seatApi,
@@ -110,5 +115,6 @@ export default {
     attendanceApi,
     reportApi,
     dashboardApi,
+    libraryApi,
     API_BASE_URL
 };
