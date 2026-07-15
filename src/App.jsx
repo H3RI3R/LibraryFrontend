@@ -8,6 +8,40 @@ import StudentProfileModal from './components/StudentProfileModal';
 import AddFeeModal from './components/AddFeeModal';
 import api, { API_BASE_URL } from './api';
 
+const originalFetch = window.fetch;
+window.fetch = async function (...args) {
+  try {
+    const response = await originalFetch(...args);
+    let shouldRedirect = false;
+    
+    if (response.status === 401) {
+      shouldRedirect = true;
+    } else {
+      try {
+        const clone = response.clone();
+        const json = await clone.json();
+        if (json && (json.message === 'Expired Token' || json.message === 'Unauthorized token' || json.statusCode === 401)) {
+          shouldRedirect = true;
+        }
+      } catch (ignored) {}
+    }
+    
+    if (shouldRedirect) {
+      const hadToken = !!localStorage.getItem('token');
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      if (hadToken) {
+        localStorage.setItem('session_expired_toast', 'true');
+        window.location.href = '/';
+      }
+    }
+    
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
 // --- Default Data & Helper Functions ---
 const names = ["Priya S.", "Rohit K.", "Anjali V.", "Kavya N.", "Sahil M.", "Neha J.", "Aman G.", "Vikram R.", "Divya P.", "Karan S.", "Meera T.", "Yash B."];
 
@@ -79,6 +113,26 @@ export default function App() {
   const [studentLoginStep, setStudentLoginStep] = useState(1); // 1: mobile input, 2: OTP input
   const [otpInputs, setOtpInputs] = useState(['4', '2', '8', '1', '9', '5']);
 
+  // --- OTP Login State ---
+  const [showOtpView, setShowOtpView] = useState(false);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [timer, setTimer] = useState(0);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    let interval = null;
+    if (timer > 0) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev - 1);
+      }, 1000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [timer]);
+
   // --- Onboarding Wizard State (Persistent when moving back/forth) ---
   const [obStep, setObStep] = useState(1);
   const [obOwnerName, setObOwnerName] = useState('Ritik Soni');
@@ -131,6 +185,13 @@ export default function App() {
     return () => {
       document.body.removeChild(script);
     };
+  }, []);
+
+  useEffect(() => {
+    if (localStorage.getItem('session_expired_toast') === 'true') {
+      localStorage.removeItem('session_expired_toast');
+      showToast('Session expired. Please log in again.');
+    }
   }, []);
 
   // Fetch plans from backend on wizard activation
@@ -671,7 +732,8 @@ export default function App() {
       },
       body: JSON.stringify({
         email: emailToCheck,
-        password: ownerPassword
+        password: ownerPassword,
+        rememberMe: rememberMe
       })
     })
       .then(res => res.json())
@@ -710,6 +772,83 @@ export default function App() {
       .catch(err => {
         console.error("Login API error:", err);
         showToast('Failed to connect to login API.');
+      });
+  };
+
+  const handleSendOtpLogin = (e) => {
+    if (e) e.preventDefault();
+    if (!otpEmail) {
+      showToast('Please enter your email.');
+      return;
+    }
+    fetch(`${API_BASE_URL}/login/getOtp?email=${encodeURIComponent(otpEmail)}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === 'success') {
+          showToast('OTP sent successfully.');
+          setOtpSent(true);
+          setTimer(10);
+        } else {
+          if (resData.message && resData.message.includes('User not found')) {
+            showToast('There is no registration, please register first.');
+          } else {
+            showToast(resData.message || 'Failed to send OTP.');
+          }
+        }
+      })
+      .catch(err => {
+        console.error("OTP send error:", err);
+        showToast('Failed to connect to server.');
+      });
+  };
+
+  const handleVerifyOtpLogin = (e) => {
+    if (e) e.preventDefault();
+    if (!otpCode) {
+      showToast('Please enter the OTP.');
+      return;
+    }
+    fetch(`${API_BASE_URL}/login/verify-otp-login?email=${encodeURIComponent(otpEmail)}&otp=${encodeURIComponent(otpCode)}&rememberMe=${rememberMe}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(loginData => {
+        if (loginData.status === 'success') {
+          localStorage.setItem('token', loginData.token);
+          localStorage.setItem('role', loginData.role);
+
+          if (loginData.role === 'STUDENT') {
+            navigate('/student');
+            showToast('Logged in successfully.');
+            return;
+          }
+
+          // Fetch status/details
+          fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(otpEmail)}`)
+            .then(res => res.json())
+            .then(resData => {
+              if (resData.status === 'success') {
+                setIsTrialExpired(resData.data.isExpired);
+                setLibraryName(resData.data.library.name);
+                setLibraryCity(resData.data.library.city);
+                setTotalSeats(resData.data.library.totalSeats);
+              }
+              navigate('/dashboard');
+              showToast('Logged in successfully.');
+            })
+            .catch(err => {
+              console.error("Error verifying trial status:", err);
+              navigate('/dashboard');
+            });
+        } else {
+          showToast(loginData.message || 'OTP verification failed.');
+        }
+      })
+      .catch(err => {
+        console.error("OTP Verification error:", err);
+        showToast('Failed to verify OTP.');
       });
   };
 
@@ -1124,17 +1263,11 @@ export default function App() {
 
           <div className="login-form-wrap">
             <div className="login-card">
-              <div className="role-toggle">
-                <div className={`role-tab ${loginRole === 'owner' ? 'active' : ''}`} onClick={() => setLoginRole('owner')}>Library Owner / Staff</div>
-                <div className={`role-tab ${loginRole === 'student' ? 'active' : ''}`} onClick={() => setLoginRole('student')}>Student</div>
-              </div>
-
-              {/* ============ OWNER / STAFF LOGIN ============ */}
-              {loginRole === 'owner' && (
+              {!showOtpView ? (
                 <div>
                   <div className="login-eyebrow">Welcome back</div>
                   <h1 className="login-title">Log in to your desk</h1>
-                  <div className="login-sub">Enter your registered mobile number or email to access the dashboard.</div>
+                  <div className="login-sub">Enter your registered mobile number or email to access your account.</div>
 
                   <div className="login-tabs">
                     <div className={`login-tab ${loginTab === 'mobile' ? 'active' : ''}`} onClick={() => setLoginTab('mobile')}>Mobile number</div>
@@ -1158,74 +1291,61 @@ export default function App() {
                       <input type="password" placeholder="••••••••" value={ownerPassword} onChange={(e) => setOwnerPassword(e.target.value)} />
                     </div>
                     <div className="field-row">
-                      <label className="remember"><input type="checkbox" defaultChecked style={{ width: 'auto' }} /> Keep me logged in</label>
-                      <a href="#">Forgot password?</a>
+                      <label className="remember">
+                        <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} style={{ width: 'auto' }} /> Keep me logged in
+                      </label>
+                      <a href="#" onClick={(e) => e.preventDefault()}>Forgot password?</a>
                     </div>
                     <button type="submit" className="btn btn-primary login-btn">Log in</button>
                   </form>
 
                   <div className="login-divider">or</div>
-                  <button className="btn btn-ghost login-btn" onClick={() => navigate('/dashboard')}>Send OTP instead</button>
+                  <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(true)}>Send OTP instead</button>
                   <div className="login-note" style={{ marginTop: '20px' }}>
                     New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
                   </div>
                 </div>
-              )}
-
-              {/* ============ STUDENT LOGIN ============ */}
-              {loginRole === 'student' && (
+              ) : (
                 <div>
-                  <div className="login-eyebrow">Student access</div>
-                  <h1 className="login-title">Check your subscription</h1>
-                  <div className="login-sub">Log in with your registered mobile number — no password needed, we'll send a one-time code.</div>
+                  <div className="login-eyebrow">OTP Access</div>
+                  <h1 className="login-title">Log in with OTP</h1>
+                  <div className="login-sub">We will send a one-time code to your registered email address.</div>
 
-                  {studentLoginStep === 1 ? (
-                    <div>
-                      <div className="field">
-                        <label>Mobile number</label>
-                        <input type="tel" placeholder="98110 22341" value={studentMobile} onChange={(e) => setStudentMobile(e.target.value)} />
-                      </div>
-                      <div className="field-hint" style={{ marginBottom: '18px' }}>Use the mobile number your library owner has on file for you.</div>
-                      <button className="btn btn-primary login-btn" onClick={handleSendStudentOtp}>Send OTP</button>
+                  <form onSubmit={otpSent ? handleVerifyOtpLogin : handleSendOtpLogin}>
+                    <div className="field">
+                      <label>Email address</label>
+                      <input type="email" placeholder="e.g. ritik@sunrisereading.in" value={otpEmail} onChange={(e) => setOtpEmail(e.target.value)} disabled={otpSent} required />
                     </div>
-                  ) : (
-                    <div>
+
+                    {otpSent && (
                       <div className="field">
-                        <label>Enter the 6-digit code sent to <span>{studentMobile}</span></label>
-                        <div className="otp-row">
-                          {otpInputs.map((val, idx) => (
-                            <input
-                              key={idx}
-                              className="otp-box"
-                              maxLength={1}
-                              inputMode="numeric"
-                              value={val}
-                              onChange={(e) => {
-                                const newOtp = [...otpInputs];
-                                newOtp[idx] = e.target.value;
-                                setOtpInputs(newOtp);
-                                // Focus next input
-                                if (e.target.value && e.target.nextSibling) {
-                                  e.target.nextSibling.focus();
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Backspace' && !val && e.target.previousSibling) {
-                                  e.target.previousSibling.focus();
-                                }
-                              }}
-                            />
-                          ))}
+                        <label>Enter the 4-digit code sent to your email</label>
+                        <input type="text" placeholder="e.g. 1234" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} required />
+                      </div>
+                    )}
+
+                    <div className="field-row" style={{ marginTop: '10px', marginBottom: '15px' }}>
+                      {otpSent && (
+                        <div>
+                          {timer > 0 ? (
+                            <span style={{ fontSize: '14px', color: '#888' }}>Resend OTP in {timer}s</span>
+                          ) : (
+                            <a href="#" onClick={(e) => { e.preventDefault(); handleSendOtpLogin(); }}>Resend OTP</a>
+                          )}
                         </div>
-                      </div>
-                      <div className="field-row" style={{ marginBottom: '18px' }}>
-                        <a href="#" onClick={(e) => { e.preventDefault(); setStudentLoginStep(1); }}>Change number</a>
-                        <a href="#" onClick={(e) => { e.preventDefault(); showToast('A new OTP has been sent.'); }}>Resend OTP</a>
-                      </div>
-                      <button className="btn btn-primary login-btn" onClick={handleVerifyStudentOtp}>Verify &amp; continue</button>
+                      )}
                     </div>
-                  )}
-                  <div className="login-note" style={{ marginTop: '20px' }}>Don't have a seat yet? Ask your library desk to register you.</div>
+
+                    <button type="submit" className="btn btn-primary login-btn">
+                      {otpSent ? 'Verify & Login' : 'Send OTP'}
+                    </button>
+                  </form>
+
+                  <div className="login-divider">or</div>
+                  <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(false)}>Log in with password instead</button>
+                  <div className="login-note" style={{ marginTop: '20px' }}>
+                    New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
+                  </div>
                 </div>
               )}
             </div>
