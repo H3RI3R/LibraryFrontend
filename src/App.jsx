@@ -353,7 +353,7 @@ export default function App() {
     if (token) {
       api.dashboardApi.get()
         .then(res => {
-          if (res.success && res.data) {
+          if ((res.success || res.status === 'success') && res.data) {
             setDashboardData(res.data);
             
             // Map seats to match UI format
@@ -389,7 +389,7 @@ export default function App() {
     if (token) {
       api.dashboardApi.get()
         .then(res => {
-          if (res.success && res.data) {
+          if ((res.success || res.status === 'success') && res.data) {
             setStudentDashboardData(res.data);
           }
         })
@@ -582,7 +582,7 @@ export default function App() {
 
     if (apiCall) {
       apiCall.then(res => {
-        if (res.success && reportType === 'fee-collection') {
+        if ((res.success || res.status === 'success') && reportType === 'fee-collection') {
           if (format === 'excel') {
             const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
               + ["Month,Year,Total Collection"].join(",") + "\n"
@@ -600,7 +600,7 @@ export default function App() {
           return;
         }
 
-        if (res.success && Array.isArray(res.data)) {
+        if ((res.success || res.status === 'success') && Array.isArray(res.data)) {
           const rows = res.data.map(mapRow);
           if (format === 'excel') {
             const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
@@ -973,7 +973,7 @@ export default function App() {
 
     api.studentApi.update(studentDashboardData.studentId, payload)
       .then(res => {
-        if (res.success) {
+        if (res.success || res.status === 'success') {
           showToast('Profile updated successfully.');
           setStudentProfileOpen(false);
           fetchStudentDashboard();
@@ -2041,7 +2041,7 @@ export default function App() {
                                   if(confirm('Are you sure you want to delete this seat?')) {
                                     api.seatApi.delete(fullSeats[selectedSeatIndex].id)
                                       .then(res => {
-                                        if(res.success) {
+                                        if(res.success || res.status === 'success') {
                                           showToast('Seat deleted');
                                           setSelectedSeatIndex(null);
                                           fetchSeats();
@@ -2248,7 +2248,7 @@ export default function App() {
                                           <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--teal)' }} onClick={() => {
                                             api.attendanceApi.checkIn({ studentId: r.id })
                                               .then(res => {
-                                                if (res.success) {
+                                                if (res.success || res.status === 'success') {
                                                   showToast(`${r.name} checked in successfully`);
                                                   fetchAttendanceData();
                                                 } else {
@@ -2264,7 +2264,7 @@ export default function App() {
                                           <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--terracotta)' }} onClick={() => {
                                             api.attendanceApi.checkOut(r.id)
                                               .then(res => {
-                                                if (res.success) {
+                                                if (res.success || res.status === 'success') {
                                                   showToast(`${r.name} checked out successfully`);
                                                   fetchAttendanceData();
                                                 } else {
@@ -2677,7 +2677,7 @@ export default function App() {
               <button className="btn btn-primary" onClick={() => {
                 const request = editingSeatId ? api.seatApi.update(editingSeatId, seatForm) : api.seatApi.create(seatForm);
                 request.then(res => {
-                  if(res.success) {
+                  if(res.success || res.status === 'success') {
                     showToast(editingSeatId ? 'Seat updated' : 'Seat created');
                     setSeatModalOpen(false);
                     fetchSeats();
@@ -2738,7 +2738,7 @@ export default function App() {
               <button className="btn btn-primary" onClick={() => {
                 api.attendanceApi.update(editingAttendance.id, attendanceForm)
                   .then(res => {
-                    if (res.success) {
+                    if (res.success || res.status === 'success') {
                       showToast("Attendance updated successfully");
                       setEditAttendanceOpen(false);
                       fetchAttendanceData();
