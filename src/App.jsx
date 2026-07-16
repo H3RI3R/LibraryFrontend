@@ -2008,52 +2008,69 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel">
-                      <table className="ledger">
-                        <thead>
-                          <tr><th>Student</th><th>Mobile</th><th>Shift</th><th>Seat</th><th>Joined</th><th>Membership</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                          {filteredStudents.map((s, idx) => (
-                            <tr key={idx}>
-                              <td className="name-cell">
-                                {s.profileImage ? (
-                                  <img src={s.profileImage} alt="Avatar" className="avatar" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                                ) : (
-                                  <span className="avatar">
-                                    {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-                                  </span>
-                                )}
-                                <span className="cell-name">{s.name}</span>
-                              </td>
-                              <td className="mono">{s.mobile}</td>
-                              <td>{s.shift}</td>
-                              <td>{s.seat}</td>
-                              <td>{s.joined}</td>
-                              <td>
-                                <span className={`pill ${s.status}`}>
-                                  {s.status === 'active' ? 'Active' : 'Inactive'}
-                                </span>
-                              </td>
-                              <td>
-                                <span
-                                  className="panel-link"
-                                  onClick={() => {
-                                    setSelectedStudent(s);
-                                    setViewStudentOpen(true);
-                                  }}
-                                >
-                                  View
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="note">
-                      Showing <span>{filteredStudents.length}</span> of {studentsList.length} students. Search narrows the list instantly — try “rohit” or “98”.
-                    </div>
+                    {filteredStudents.length > 0 ? (
+                      <>
+                        <div className="panel">
+                          <table className="ledger">
+                            <thead>
+                              <tr><th>Student</th><th>Mobile</th><th>Shift</th><th>Seat</th><th>Joined</th><th>Membership</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                              {filteredStudents.map((s, idx) => (
+                                <tr key={idx}>
+                                  <td className="name-cell">
+                                    {s.profileImage ? (
+                                      <img src={s.profileImage} alt="Avatar" className="avatar" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    ) : (
+                                      <span className="avatar">
+                                        {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                                      </span>
+                                    )}
+                                    <span className="cell-name">{s.name}</span>
+                                  </td>
+                                  <td className="mono">{s.mobile}</td>
+                                  <td>{s.shift}</td>
+                                  <td>{s.seat}</td>
+                                  <td>{s.joined}</td>
+                                  <td>
+                                    <span className={`pill ${s.status}`}>
+                                      {s.status === 'active' ? 'Active' : 'Inactive'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span
+                                      className="panel-link"
+                                      onClick={() => {
+                                        setSelectedStudent(s);
+                                        setViewStudentOpen(true);
+                                      }}
+                                    >
+                                      View
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="note">
+                          Showing <span>{filteredStudents.length}</span> of {studentsList.length} students. Search narrows the list instantly — try “rohit” or “98”.
+                        </div>
+                      </>
+                    ) : (
+                      <div className="empty-state">
+                        <div className="empty-state-icon">👤</div>
+                        <h3 className="empty-state-title">{studentSearch ? "No Search Results" : "No Students Registered"}</h3>
+                        <p className="empty-state-desc">
+                          {studentSearch ? `No registered students match "${studentSearch}".` : "Get started by registering your first student into your library ledger."}
+                        </p>
+                        {studentSearch ? (
+                          <button className="btn btn-ghost" onClick={() => setStudentSearch('')}>Clear Search</button>
+                        ) : (
+                          <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
+                        )}
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -2074,103 +2091,118 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="toolbar">
-                      <div className="filter-chips">
-                        {['All shifts', 'Morning (7–2)', 'Evening (2–9)', 'Full day'].map((chip) => (
-                          <div
-                            key={chip}
-                            className={`chip ${seatFilter === chip ? 'active' : ''}`}
-                            onClick={() => setSeatFilter(chip)}
-                          >
-                            {chip}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="seat-legend" style={{ margin: 0 }}>
-                        <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
-                        <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
-                        <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
-                      </div>
-                    </div>
-
-                    <div className="grid-2" style={{ gridTemplateColumns: '1.7fr 1fr' }}>
-                      <div className="panel">
-                        <div className="seat-grid">
-                          {fullSeats.map((s, idx) => (
-                            <div
-                              key={idx}
-                              className={`seat ${s.status} ${selectedSeatIndex === idx ? 'selected' : ''}`}
-                              title={s.student ? `${s.student} — ${s.status}` : 'Available'}
-                              onClick={() => setSelectedSeatIndex(idx)}
-                            >
-                              {s.label}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="panel seat-side">
-                        <div className="panel-head"><h3 className="panel-title">Seat detail</h3></div>
-                        {selectedSeatIndex !== null ? (
-                          fullSeats[selectedSeatIndex].status === 'available' ? (
-                            <div className="seat-detail">
-                              Seat <b>{fullSeats[selectedSeatIndex].label}</b> is available.<br /><br />
-                              <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
-                              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                                <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => {
-                                  setEditingSeatId(fullSeats[selectedSeatIndex].id);
-                                  setSeatForm({
-                                    seatNumber: fullSeats[selectedSeatIndex].label,
-                                    floor: fullSeats[selectedSeatIndex].floor || '',
-                                    section: fullSeats[selectedSeatIndex].section || ''
-                                  });
-                                  setSeatModalOpen(true);
-                                }}>Edit</button>
-                                <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--terracotta)' }} onClick={() => {
-                                  if(confirm('Are you sure you want to delete this seat?')) {
-                                    api.seatApi.delete(fullSeats[selectedSeatIndex].id)
-                                      .then(res => {
-                                        if(res.success || res.status === 'success') {
-                                          showToast('Seat deleted');
-                                          setSelectedSeatIndex(null);
-                                          fetchSeats();
-                                        } else {
-                                          alert(res.message || "Failed to delete seat.");
-                                        }
-                                      });
-                                  }
-                                }}>Delete</button>
+                    {fullSeats.length > 0 ? (
+                      <>
+                        <div className="toolbar">
+                          <div className="filter-chips">
+                            {['All shifts', 'Morning (7–2)', 'Evening (2–9)', 'Full day'].map((chip) => (
+                              <div
+                                key={chip}
+                                className={`chip ${seatFilter === chip ? 'active' : ''}`}
+                                onClick={() => setSeatFilter(chip)}
+                              >
+                                {chip}
                               </div>
-                            </div>
-                            ) : (() => {
-                              const currentSeat = fullSeats[selectedSeatIndex];
-                              const assignedStudent = studentsList.find(st => st.seat === currentSeat.label);
-                              const todayRecord = assignedStudent ? attendanceList.find(a => a.studentId === assignedStudent.id) : null;
-                              
-                              const attStatus = todayRecord ? (todayRecord.status === 'ABSENT' ? 'Absent' : todayRecord.checkOut ? 'Left' : 'Checked In') : 'Absent';
-                              const attClass = todayRecord ? (todayRecord.status === 'ABSENT' ? 'due' : todayRecord.checkOut ? 'inactive' : 'active') : 'due';
+                            ))}
+                          </div>
+                          <div className="seat-legend" style={{ margin: 0 }}>
+                            <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
+                            <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
+                            <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
+                          </div>
+                        </div>
 
-                              return (
-                                <div className="seat-detail filled">
-                                  <div className="seat-detail-name">{assignedStudent ? assignedStudent.name : 'Occupied'}</div>
-                                  <div style={{ display: 'flex', gap: '8px', margin: '8px 0 16px 0' }}>
-                                    <span className={`stamp ${currentSeat.status === 'due' ? 'due' : 'paid'}`} style={{ margin: 0 }}>
-                                      {currentSeat.status === 'due' ? 'Due' : 'Paid'}
-                                    </span>
-                                    <span className={`stamp ${attClass}`} style={{ margin: 0 }}>
-                                      {attStatus}
-                                    </span>
-                                  </div>
-                                  <div className="seat-detail-row"><span>Seat</span><b>{currentSeat.label}</b></div>
-                                  <div className="seat-detail-row"><span>Floor</span><b>{currentSeat.floor || '—'}</b></div>
-                                  <div className="seat-detail-row"><span>Section</span><b>{currentSeat.section || '—'}</b></div>
+                        <div className="grid-2" style={{ gridTemplateColumns: '1.7fr 1fr' }}>
+                          <div className="panel">
+                            <div className="seat-grid">
+                              {fullSeats.map((s, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`seat ${s.status} ${selectedSeatIndex === idx ? 'selected' : ''}`}
+                                  title={s.student ? `${s.student} — ${s.status}` : 'Available'}
+                                  onClick={() => setSelectedSeatIndex(idx)}
+                                >
+                                  {s.label}
                                 </div>
-                              );
-                            })()
-                        ) : (
-                          <div className="seat-detail">Click any seat to view or assign it</div>
-                        )}
+                              ))}
+                            </div>
+                          </div>
+                          <div className="panel seat-side">
+                            <div className="panel-head"><h3 className="panel-title">Seat detail</h3></div>
+                            {selectedSeatIndex !== null ? (
+                              fullSeats[selectedSeatIndex].status === 'available' ? (
+                                <div className="seat-detail">
+                                  Seat <b>{fullSeats[selectedSeatIndex].label}</b> is available.<br /><br />
+                                  <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
+                                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                    <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => {
+                                      setEditingSeatId(fullSeats[selectedSeatIndex].id);
+                                      setSeatForm({
+                                        seatNumber: fullSeats[selectedSeatIndex].label,
+                                        floor: fullSeats[selectedSeatIndex].floor || '',
+                                        section: fullSeats[selectedSeatIndex].section || ''
+                                      });
+                                      setSeatModalOpen(true);
+                                    }}>Edit</button>
+                                    <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--terracotta)' }} onClick={() => {
+                                      if(confirm('Are you sure you want to delete this seat?')) {
+                                        api.seatApi.delete(fullSeats[selectedSeatIndex].id)
+                                          .then(res => {
+                                            if(res.success || res.status === 'success') {
+                                              showToast('Seat deleted');
+                                              setSelectedSeatIndex(null);
+                                              fetchSeats();
+                                            } else {
+                                              alert(res.message || "Failed to delete seat.");
+                                            }
+                                          });
+                                      }
+                                    }}>Delete</button>
+                                  </div>
+                                </div>
+                                ) : (() => {
+                                  const currentSeat = fullSeats[selectedSeatIndex];
+                                  const assignedStudent = studentsList.find(st => st.seat === currentSeat.label);
+                                  const todayRecord = assignedStudent ? attendanceList.find(a => a.studentId === assignedStudent.id) : null;
+                                  
+                                  const attStatus = todayRecord ? (todayRecord.status === 'ABSENT' ? 'Absent' : todayRecord.checkOut ? 'Left' : 'Checked In') : 'Absent';
+                                  const attClass = todayRecord ? (todayRecord.status === 'ABSENT' ? 'due' : todayRecord.checkOut ? 'inactive' : 'active') : 'due';
+
+                                  return (
+                                    <div className="seat-detail filled">
+                                      <div className="seat-detail-name">{assignedStudent ? assignedStudent.name : 'Occupied'}</div>
+                                      <div style={{ display: 'flex', gap: '8px', margin: '8px 0 16px 0' }}>
+                                        <span className={`stamp ${currentSeat.status === 'due' ? 'due' : 'paid'}`} style={{ margin: 0 }}>
+                                          {currentSeat.status === 'due' ? 'Due' : 'Paid'}
+                                        </span>
+                                        <span className={`stamp ${attClass}`} style={{ margin: 0 }}>
+                                          {attStatus}
+                                        </span>
+                                      </div>
+                                      <div className="seat-detail-row"><span>Seat</span><b>{currentSeat.label}</b></div>
+                                      <div className="seat-detail-row"><span>Floor</span><b>{currentSeat.floor || '—'}</b></div>
+                                      <div className="seat-detail-row"><span>Section</span><b>{currentSeat.section || '—'}</b></div>
+                                    </div>
+                                  );
+                                })()
+                            ) : (
+                              <div className="seat-detail">Click any seat to view or assign it</div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="empty-state">
+                        <div className="empty-state-icon">🪑</div>
+                        <h3 className="empty-state-title">No Seats Configured</h3>
+                        <p className="empty-state-desc">Create your library seats floor plan to start assigning them to students.</p>
+                        <button className="btn btn-primary" onClick={() => {
+                          setEditingSeatId(null);
+                          setSeatForm({ seatNumber: '', floor: '', section: '' });
+                          setSeatModalOpen(true);
+                        }}>+ Create Seats</button>
                       </div>
-                    </div>
+                    )}
                   </section>
                 )}
 
@@ -2217,7 +2249,7 @@ export default function App() {
                     {(() => {
                       const filteredFees = feeHistoryList;
 
-                      return (
+                      return filteredFees.length > 0 ? (
                         <div className="panel">
                           <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
                           <table className="ledger">
@@ -2225,47 +2257,50 @@ export default function App() {
                               <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
                             </thead>
                             <tbody>
-                              {filteredFees.length > 0 ? (
-                                filteredFees.map((fee, fIdx) => {
-                                  const student = studentsList.find(s => s.id === fee.studentId);
-                                  const sName = student ? student.name : 'Unknown Student';
-                                  const avatar = sName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                              {filteredFees.map((fee, fIdx) => {
+                                const student = studentsList.find(s => s.id === fee.studentId);
+                                const sName = student ? student.name : 'Unknown Student';
+                                const avatar = sName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
-                                  const isPaid = fee.status === 'PAID';
-                                  const formattedDate = isPaid 
-                                    ? (fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—')
-                                    : `Due ${fee.dueDate ? new Date(fee.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}`;
+                                const isPaid = fee.status === 'PAID';
+                                const formattedDate = isPaid 
+                                  ? (fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—')
+                                  : `Due ${fee.dueDate ? new Date(fee.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}`;
 
-                                  return (
-                                    <tr key={fIdx}>
-                                      <td className="name-cell">
-                                        <span className="avatar">{avatar}</span>
-                                        <span className="cell-name">{sName}</span>
-                                      </td>
-                                      <td className="cell-amount">₹{fee.amount}</td>
-                                      <td>{fee.paymentMode || '—'}</td>
-                                      <td>{formattedDate}</td>
-                                      <td><span className={`stamp ${isPaid ? 'paid' : 'due'}`}>{isPaid ? 'Paid' : 'Due'}</span></td>
-                                      <td>
-                                        {isPaid ? (
-                                          <span className="panel-link" onClick={() => {
-                                            alert(`RECEIPT\n-----------------\nStudent: ${sName}\nAmount: ₹${fee.amount}\nPaid Amount: ₹${fee.paidAmount}\nMethod: ${fee.paymentMode}\nDate: ${fee.paymentDate}`);
-                                          }} style={{ cursor: 'pointer' }}>Receipt</span>
-                                        ) : (
-                                          <span className="panel-link" onClick={() => {
-                                            setSelectedFeeForPayment(fee);
-                                            setPayNowOpen(true);
-                                          }} style={{ cursor: 'pointer', color: 'var(--terracotta)' }}>Collect</span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })
-                              ) : (
-                                <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)' }}>No payment records found.</td></tr>
-                              )}
+                                return (
+                                  <tr key={fIdx}>
+                                    <td className="name-cell">
+                                      <span className="avatar">{avatar}</span>
+                                      <span className="cell-name">{sName}</span>
+                                    </td>
+                                    <td className="cell-amount">₹{fee.amount}</td>
+                                    <td>{fee.paymentMode || '—'}</td>
+                                    <td>{formattedDate}</td>
+                                    <td><span className={`stamp ${isPaid ? 'paid' : 'due'}`}>{isPaid ? 'Paid' : 'Due'}</span></td>
+                                    <td>
+                                      {isPaid ? (
+                                        <span className="panel-link" onClick={() => {
+                                          alert(`RECEIPT\n-----------------\nStudent: ${sName}\nAmount: ₹${fee.amount}\nPaid Amount: ₹${fee.paidAmount}\nMethod: ${fee.paymentMode}\nDate: ${fee.paymentDate}`);
+                                        }} style={{ cursor: 'pointer' }}>Receipt</span>
+                                      ) : (
+                                        <span className="panel-link" onClick={() => {
+                                          setSelectedFeeForPayment(fee);
+                                          setPayNowOpen(true);
+                                        }} style={{ cursor: 'pointer', color: 'var(--terracotta)' }}>Collect</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
+                        </div>
+                      ) : (
+                        <div className="empty-state">
+                          <div className="empty-state-icon">💵</div>
+                          <h3 className="empty-state-title">No Invoices Found</h3>
+                          <p className="empty-state-desc">All student fee bills, payment history, and collection receipts will be listed here.</p>
+                          <button className="btn btn-primary" onClick={() => setAddFeeOpen(true)}>Create Invoice</button>
                         </div>
                       );
                     })()}
@@ -2308,15 +2343,15 @@ export default function App() {
                         <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{attendanceStats.notYetArrived}</div></div>
                       </div>
 
-                      <div className="panel">
-                        <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
-                        <table className="ledger">
-                          <thead>
-                            <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th><th>Actions</th></tr>
-                          </thead>
-                          <tbody>
-                            {filteredDailyAttendance.length > 0 ? (
-                              filteredDailyAttendance.map((r, rIdx) => {
+                      {filteredDailyAttendance.length > 0 ? (
+                        <div className="panel">
+                          <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
+                          <table className="ledger">
+                            <thead>
+                              <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody>
+                              {filteredDailyAttendance.map((r, rIdx) => {
                                 const att = r.attendanceRecord;
                                 const isAbsent = att && att.status === 'ABSENT';
                                 return (
@@ -2391,13 +2426,24 @@ export default function App() {
                                     </td>
                                   </tr>
                                 );
-                              })
-                            ) : (
-                              <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)' }}>No student attendance data found.</td></tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="empty-state">
+                          <div className="empty-state-icon">📋</div>
+                          <h3 className="empty-state-title">{attendanceSearch ? "No Search Results" : "No Registered Students"}</h3>
+                          <p className="empty-state-desc">
+                            {attendanceSearch ? `No students match "${attendanceSearch}".` : "Daily attendance list will appear once you register students."}
+                          </p>
+                          {attendanceSearch ? (
+                            <button className="btn btn-ghost" onClick={() => setAttendanceSearch('')}>Clear Search</button>
+                          ) : (
+                            <button className="btn btn-primary" onClick={() => { setActiveView('students'); setAddStudentOpen(true); }}>+ Register Student</button>
+                          )}
+                        </div>
+                      )}
                     </section>
                   );
                 })()}
@@ -2665,15 +2711,15 @@ export default function App() {
               <section className="sview active">
                 <div className="page-eyebrow">Ledger</div>
                 <h1 className="page-title" style={{ marginBottom: '22px' }}>Your payments</h1>
-                <div className="panel">
-                  <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
-                  <table className="ledger">
-                    <thead>
-                      <tr><th>Month</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {studentDashboardData?.paymentHistory && studentDashboardData.paymentHistory.length > 0 ? (
-                        studentDashboardData.paymentHistory.map((item, idx) => {
+                {studentDashboardData?.paymentHistory && studentDashboardData.paymentHistory.length > 0 ? (
+                  <div className="panel">
+                    <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
+                    <table className="ledger">
+                      <thead>
+                        <tr><th>Month</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {studentDashboardData.paymentHistory.map((item, idx) => {
                           const formattedDate = item.paymentDate ? new Date(item.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
                           return (
                             <tr key={idx}>
@@ -2689,13 +2735,17 @@ export default function App() {
                               </td>
                             </tr>
                           );
-                        })
-                      ) : (
-                        <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)' }}>No payment records found.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">💵</div>
+                    <h3 className="empty-state-title">No Payments Yet</h3>
+                    <p className="empty-state-desc">Your payment history and invoices will be listed here once generated.</p>
+                  </div>
+                )}
               </section>
             )}
 
@@ -2704,27 +2754,31 @@ export default function App() {
               <section className="sview active">
                 <div className="page-eyebrow">This month</div>
                 <h1 className="page-title" style={{ marginBottom: '22px' }}>Your attendance</h1>
-                <div className="panel">
-                  <div className="panel-head"><h3 className="panel-title">Recent check-ins</h3></div>
-                  <table className="ledger">
-                    <thead>
-                      <tr><th>Date</th><th>Check-in</th><th>Check-out</th></tr>
-                    </thead>
-                    <tbody>
-                      {studentDashboardData?.attendanceHistory && studentDashboardData.attendanceHistory.length > 0 ? (
-                        studentDashboardData.attendanceHistory.map((item, idx) => (
+                {studentDashboardData?.attendanceHistory && studentDashboardData.attendanceHistory.length > 0 ? (
+                  <div className="panel">
+                    <div className="panel-head"><h3 className="panel-title">Recent check-ins</h3></div>
+                    <table className="ledger">
+                      <thead>
+                        <tr><th>Date</th><th>Check-in</th><th>Check-out</th></tr>
+                      </thead>
+                      <tbody>
+                        {studentDashboardData.attendanceHistory.map((item, idx) => (
                           <tr key={idx}>
                             <td className="cell-name">{new Date(item.attendanceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</td>
                             <td className="mono">{item.checkIn || '—'}</td>
                             <td className="mono">{item.checkOut || '—'}</td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr><td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)' }}>No attendance records found.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">📋</div>
+                    <h3 className="empty-state-title">No Attendance Logs</h3>
+                    <p className="empty-state-desc">Your daily check-in and check-out logs will be recorded here.</p>
+                  </div>
+                )}
               </section>
             )}
           </main>

@@ -525,3 +525,34 @@ table.ledger tr:hover td{background:var(--paper-deep);}
 .password-toggle-btn:hover {
   color: var(--ink);
 }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--card);
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  margin: 16px 0;
+}
+.empty-state-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 6px 0;
+}
+.empty-state-desc {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 320px;
+  margin: 0 0 16px 0;
+  line-height: 1.4;
+}
