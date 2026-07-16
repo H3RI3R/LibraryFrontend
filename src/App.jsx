@@ -1790,18 +1790,29 @@ export default function App() {
                   {view.label}
                 </li>
               ))}
-              <li
-                className="navitem"
-                style={{ marginTop: '10px', borderTop: '1px solid rgba(239,232,214,0.15)', paddingTop: '12px' }}
-                onClick={handleLogout}
-              >
-                <span className="dot"></span>
-                Log out
-              </li>
             </ul>
             <div className="sidebar-foot">
-              {libraryName}<br />
-              {libraryCity} &middot; {totalSeats} seats
+              <div style={{ marginBottom: '12px', fontSize: '12px', opacity: 0.8, color: 'var(--ink-soft)' }}>
+                {libraryName}<br />
+                {libraryCity} &middot; {totalSeats} seats
+              </div>
+              <div 
+                className="navitem" 
+                onClick={handleLogout}
+                style={{ 
+                  opacity: 0.6,
+                  padding: '8px 0',
+                  marginTop: '8px',
+                  borderTop: '1px solid rgba(239,232,214,0.15)',
+                  cursor: 'pointer',
+                  transition: 'opacity 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
+              >
+                <span className="dot" style={{ background: 'var(--terracotta, #e11d48)' }}></span>
+                Log out
+              </div>
             </div>
           </nav>
 
