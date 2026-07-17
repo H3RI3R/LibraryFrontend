@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, studentToEdit }) {
+export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [], studentsList = [], studentToEdit, selectedSeatLabel = '', defaultShift = 'Morning' }) {
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
   const [joined, setJoined] = useState('');
@@ -55,7 +55,8 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
         setParentName('');
         setParentMobile('');
         setAddress('');
-        setShift('Morning');
+        setShift(defaultShift || 'Morning');
+        setSeat(selectedSeatLabel || '');
         setStatus('active');
         setMonthlyFee(800);
         setProfileImage('');
@@ -64,13 +65,47 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
         setAge(20);
       }
     }
-  }, [open, studentToEdit]);
+  }, [open, studentToEdit, defaultShift, selectedSeatLabel]);
+
+  const getVacantSeatsForShift = () => {
+    return fullSeats.filter(seat => {
+      if (seat.status === 'uncreated') return false;
+      
+      const assigned = studentsList.filter(st => st.seat === seat.label);
+      const activeAssigned = studentToEdit 
+        ? assigned.filter(st => st.id !== studentToEdit.id)
+        : assigned;
+
+      if (shift === 'Morning') {
+        const isBlocked = activeAssigned.some(st => {
+          const stShift = (st.shift || '').toLowerCase().replace('_', ' ');
+          return stShift === 'morning' || stShift === 'full day';
+        });
+        return !isBlocked;
+      } else if (shift === 'Evening') {
+        const isBlocked = activeAssigned.some(st => {
+          const stShift = (st.shift || '').toLowerCase().replace('_', ' ');
+          return stShift === 'evening' || stShift === 'full day';
+        });
+        return !isBlocked;
+      } else if (shift === 'Full day') {
+        return activeAssigned.length === 0;
+      }
+      return true;
+    });
+  };
+
+  const dynamicVacantSeats = getVacantSeatsForShift();
 
   useEffect(() => {
-    if (!studentToEdit && vacantSeats && vacantSeats.length > 0) {
-      setSeat(vacantSeats[0].label);
+    if (open && !studentToEdit && dynamicVacantSeats.length > 0) {
+      if (selectedSeatLabel && dynamicVacantSeats.some(s => s.label === selectedSeatLabel)) {
+        setSeat(selectedSeatLabel);
+      } else if (!dynamicVacantSeats.some(s => s.label === seat)) {
+        setSeat(dynamicVacantSeats[0].label);
+      }
     }
-  }, [vacantSeats, studentToEdit]);
+  }, [shift, open, studentToEdit, dynamicVacantSeats, selectedSeatLabel]);
 
   if (!open) return null;
 
@@ -92,6 +127,28 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
       alert('Please add a name.');
       return;
     }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (email && !emailRegex.test(email)) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+
+    const phoneRegex = /^[0-9]{10}$/;
+    const cleanMobile = mobile ? mobile.replace(/[\s-]/g, '') : '';
+    if (!phoneRegex.test(cleanMobile)) {
+      alert('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (parentMobile) {
+      const cleanParentMobile = parentMobile.replace(/[\s-]/g, '');
+      if (!phoneRegex.test(cleanParentMobile)) {
+        alert('Please enter a valid 10-digit parent mobile number.');
+        return;
+      }
+    }
+
     onSubmit({
       name,
       mobile: mobile || '—',
@@ -161,7 +218,7 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
               </div>
               <div className="field">
                 <label>Mobile number</label>
-                <input type="tel" placeholder="98110 22341" value={mobile} onChange={(e) => setMobile(e.target.value)} required />
+                <input type="tel" placeholder="9811022341" maxLength={10} value={mobile} onChange={(e) => setMobile(e.target.value)} required />
               </div>
               <div className="field">
                 <label>Joining date</label>
@@ -190,7 +247,7 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
                 <label>Assign seat</label>
                 <select value={seat} onChange={(e) => setSeat(e.target.value)}>
                   {studentToEdit && <option value={studentToEdit.seat}>{studentToEdit.seat} (Current)</option>}
-                  {vacantSeats.map(s => (
+                  {dynamicVacantSeats.map(s => (
                     <option key={s.label} value={s.label}>{s.label}</option>
                   ))}
                   <option value="">No Seat</option>
@@ -198,14 +255,14 @@ export default function AddStudentModal({ open, onClose, onSubmit, vacantSeats, 
               </div>
               
               <div style={{ gridColumn: 'span 2', height: '1px', backgroundColor: '#eee', margin: '10px 0' }} />
-
+ 
               <div className="field">
                 <label>Parent name</label>
                 <input type="text" placeholder="e.g. Suresh Nair" value={parentName} onChange={(e) => setParentName(e.target.value)} />
               </div>
               <div className="field">
                 <label>Parent mobile</label>
-                <input type="tel" placeholder="98110 00000" value={parentMobile} onChange={(e) => setParentMobile(e.target.value)} />
+                <input type="tel" placeholder="9811000000" maxLength={10} value={parentMobile} onChange={(e) => setParentMobile(e.target.value)} />
               </div>
               <div className="field span-2">
                 <label>Address</label>

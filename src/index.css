@@ -160,6 +160,65 @@ body{
 .seat.due{background:var(--terracotta-tint); border-color:#E3BBAC; color:var(--terracotta);}
 .seat.selected{outline:2px solid var(--mustard); outline-offset:1px;}
 
+.seat-grid-github {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 8px;
+  background: var(--paper-deep);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+}
+.seat-github {
+  width: 100%;
+  padding: 4px;
+  box-sizing: border-box;
+  text-align: center;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  line-height: 1.1;
+  height: 38px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8.5px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  user-select: none;
+  border: 1px solid transparent;
+}
+.seat-github.available {
+  background: rgba(0, 0, 0, 0.05); /* Faded slate/gray */
+  color: var(--ink-soft);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.seat-github.occupied {
+  background: var(--teal); /* Teal */
+  color: #ffffff;
+}
+.seat-github.due {
+  background: var(--terracotta); /* Terracotta */
+  color: #ffffff;
+}
+.seat-github.uncreated {
+  background: rgba(0, 0, 0, 0.02);
+  color: rgba(0, 0, 0, 0.25);
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+}
+.seat-github:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+.seat-github.selected {
+  outline: 2px solid var(--mustard);
+  outline-offset: 2px;
+}
+
 .seat-side{width:100%;}
 .seat-detail{
   border:1px dashed var(--rule); border-radius:10px; padding:16px; text-align:center; color:var(--muted); font-size:13px;

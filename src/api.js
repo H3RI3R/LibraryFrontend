@@ -1,5 +1,5 @@
-export const API_BASE_URL = 'https://test.edu2all.in/library';
-// export const API_BASE_URL = 'http://localhost:5007';
+// export const API_BASE_URL = 'https://test.edu2all.in/library';
+export const API_BASE_URL = 'http://localhost:5007';
 
 // Note: If testing locally against the Spring Boot server, change this to 'http://localhost:5007'
 

@@ -59,12 +59,29 @@ export default function AddFeeModal({ open, onClose, onSubmit, students }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                 <div className="field">
-                  <label>Month (1-12)</label>
-                  <input type="number" min="1" max="12" value={month} onChange={(e) => setMonth(parseInt(e.target.value))} required />
+                  <label>Billing Month</label>
+                  <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))}>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                  </select>
                 </div>
                 <div className="field">
-                  <label>Year</label>
-                  <input type="number" min="2020" max="2100" value={year} onChange={(e) => setYear(parseInt(e.target.value))} required />
+                  <label>Billing Year</label>
+                  <select value={year} onChange={(e) => setYear(parseInt(e.target.value))}>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>

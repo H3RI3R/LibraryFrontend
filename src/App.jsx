@@ -13,7 +13,7 @@ window.fetch = async function (...args) {
   try {
     const response = await originalFetch(...args);
     let shouldRedirect = false;
-    
+
     if (response.status === 401) {
       shouldRedirect = true;
     } else {
@@ -23,9 +23,9 @@ window.fetch = async function (...args) {
         if (json && (json.message === 'Expired Token' || json.message === 'Unauthorized token' || json.statusCode === 401)) {
           shouldRedirect = true;
         }
-      } catch (ignored) {}
+      } catch (ignored) { }
     }
-    
+
     if (shouldRedirect) {
       const hadToken = !!localStorage.getItem('token');
       localStorage.removeItem('token');
@@ -35,7 +35,7 @@ window.fetch = async function (...args) {
         window.location.href = '/';
       }
     }
-    
+
     return response;
   } catch (error) {
     throw error;
@@ -111,7 +111,7 @@ export default function App() {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
-  
+
   const [studentMobile, setStudentMobile] = useState('97112 44556');
   const [studentLoginStep, setStudentLoginStep] = useState(1); // 1: mobile input, 2: OTP input
   const [otpInputs, setOtpInputs] = useState(['4', '2', '8', '1', '9', '5']);
@@ -148,6 +148,12 @@ export default function App() {
   const [obLibState, setObLibState] = useState('Uttar Pradesh');
   const [obLibAddress, setObLibAddress] = useState('Building, street, landmark');
   const [obShifts, setObShifts] = useState({ Morning: true, Evening: true, 'Full day': false });
+  const [obShiftTimings, setObShiftTimings] = useState({
+    Morning: '7 AM – 2 PM',
+    Evening: '2 PM – 9 PM',
+    'Full day': '7 AM – 9 PM'
+  });
+  const [studentShiftFilter, setStudentShiftFilter] = useState('All shifts');
   const [obTotalSeats, setObTotalSeats] = useState(60);
   const [obFeeAmount, setObFeeAmount] = useState(800);
   const [obDueDay, setObDueDay] = useState(5);
@@ -182,7 +188,7 @@ export default function App() {
   const [dashSeats, setDashSeats] = useState([]);
   const [fullSeats, setFullSeats] = useState([]);
   const [selectedSeatIndex, setSelectedSeatIndex] = useState(null);
-  
+
   // Seat filter (seats view)
   const [seatFilter, setSeatFilter] = useState('All shifts');
 
@@ -286,7 +292,7 @@ export default function App() {
             }
           })
           .catch(err => console.error("Error fetching students:", err));
-        
+
         fetchDashboardData();
       }
     } else if (location.pathname === '/student') {
@@ -336,7 +342,7 @@ export default function App() {
   // --- Toast State ---
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
-  
+
   // --- Student Subscription payment state ---
   const [isSubPaid, setIsSubPaid] = useState(false);
   const [studentPaymentHistory, setStudentPaymentHistory] = useState([
@@ -365,7 +371,7 @@ export default function App() {
         .then(res => {
           if ((res.success || res.status === 'success') && res.data) {
             setDashboardData(res.data);
-            
+
             // Map seats to match UI format
             if (Array.isArray(res.data.seats)) {
               const mappedSeats = res.data.seats.map(s => {
@@ -445,11 +451,12 @@ export default function App() {
   useEffect(() => {
     if (activeView === 'dashboard') {
       fetchDashboardData();
+      fetchSeats();
     }
     if (activeView === 'attendance' || activeView === 'seats') {
       fetchAttendanceData();
     }
-    if (activeView === 'seats') {
+    if (activeView === 'seats' || activeView === 'students') {
       fetchSeats();
     }
     if (activeView === 'fees') {
@@ -459,6 +466,54 @@ export default function App() {
       fetchSettingsData();
     }
   }, [activeView, feeFilter]);
+
+  const getParsedShiftsList = () => {
+    const rawShifts = settingsData.shifts || 'Morning (7 AM – 2 PM),Evening (2 PM – 9 PM),Full day (7 AM – 9 PM)';
+    const parsed = rawShifts.split(',').map(s => s.trim());
+    return ['All shifts', ...parsed];
+  };
+
+  const getDisplaySeats = () => {
+    let activeShift = null;
+    const lowerFilter = seatFilter.toLowerCase();
+    if (lowerFilter.includes('morning')) {
+      activeShift = 'morning';
+    } else if (lowerFilter.includes('evening')) {
+      activeShift = 'evening';
+    } else if (lowerFilter.includes('full')) {
+      activeShift = 'full day';
+    }
+
+    return fullSeats.map(seat => {
+      if (seat.status === 'uncreated') return seat;
+
+      const assignedStudents = studentsList.filter(st => st.seat === seat.label);
+
+      let matchedStudent = null;
+      if (activeShift) {
+        matchedStudent = assignedStudents.find(st => {
+          const stShift = (st.shift || '').toLowerCase().replace('_', ' ');
+          return stShift === activeShift;
+        });
+      } else {
+        matchedStudent = assignedStudents[0];
+      }
+
+      if (matchedStudent) {
+        return {
+          ...seat,
+          status: matchedStudent.status === 'due' ? 'due' : 'occupied',
+          student: matchedStudent.name
+        };
+      } else {
+        return {
+          ...seat,
+          status: 'available',
+          student: null
+        };
+      }
+    });
+  };
 
   const showToast = (html) => {
     setToastMessage(html);
@@ -480,17 +535,29 @@ export default function App() {
       fetch(`${API_BASE_URL}/api/seats`, { headers: { 'Authorization': token } })
         .then(res => res.json())
         .then(resData => {
-          if (resData.success && Array.isArray(resData.data)) {
+          if ((resData.success || resData.status === 'success') && Array.isArray(resData.data)) {
             const mappedSeats = resData.data.map(s => ({
               id: s.id,
               label: s.seatNumber,
               floor: s.floor,
               section: s.section,
               status: s.status === 'AVAILABLE' ? 'available' : s.status === 'OCCUPIED' ? 'occupied' : 'reserved',
-              student: null 
+              student: null
             }));
-            setDashSeats(mappedSeats.slice(0, 36));
-            setFullSeats(mappedSeats);
+
+            const mergedSeats = [...mappedSeats];
+            const limit = totalSeats || 60;
+
+            while (mergedSeats.length < limit) {
+              mergedSeats.push({
+                label: '',
+                status: 'uncreated',
+                student: null
+              });
+            }
+
+            setDashSeats(mergedSeats.slice(0, 36));
+            setFullSeats(mergedSeats);
           }
         })
         .catch(console.error);
@@ -503,7 +570,7 @@ export default function App() {
       fetch(`${API_BASE_URL}/api/attendance/today`, { headers: { 'Authorization': token } })
         .then(res => res.json())
         .then(resData => {
-          if (resData.success && Array.isArray(resData.data)) {
+          if ((resData.success || resData.status === 'success') && Array.isArray(resData.data)) {
             setAttendanceList(resData.data);
           }
         })
@@ -512,7 +579,7 @@ export default function App() {
       fetch(`${API_BASE_URL}/api/attendance/dashboard`, { headers: { 'Authorization': token } })
         .then(res => res.json())
         .then(resData => {
-          if (resData.success && resData.data) {
+          if ((resData.success || resData.status === 'success') && resData.data) {
             setAttendanceStats({
               checkedIn: resData.data.checkedIn || 0,
               checkedOut: resData.data.checkedOut || 0,
@@ -567,7 +634,7 @@ export default function App() {
     let apiCall;
     let filename = reportType;
     let headers = [];
-    let mapRow = () => {};
+    let mapRow = () => { };
 
     if (reportType === 'active-students') {
       apiCall = api.reportApi.getActiveStudents();
@@ -802,6 +869,11 @@ export default function App() {
   // --- Actions ---
   const handleOwnerLogin = (e) => {
     e.preventDefault();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(ownerEmail)) {
+      showToast('Please enter a valid email address.');
+      return;
+    }
     const emailToCheck = loginTab === 'email' ? ownerEmail : ownerMobile;
 
     fetch(`${API_BASE_URL}/login/all`, {
@@ -858,6 +930,11 @@ export default function App() {
     if (e) e.preventDefault();
     if (!otpEmail) {
       showToast('Please enter your email.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(otpEmail)) {
+      showToast('Please enter a valid email address.');
       return;
     }
     fetch(`${API_BASE_URL}/login/getOtp?email=${encodeURIComponent(otpEmail)}`, {
@@ -965,7 +1042,7 @@ export default function App() {
 
   const handleStudentProfileUpdate = (updatedData) => {
     if (!studentDashboardData || !studentDashboardData.studentId) return;
-    
+
     const formData = new FormData();
     formData.append('studentName', updatedData.studentName);
     formData.append('mobileNumber', updatedData.mobileNumber);
@@ -1060,6 +1137,7 @@ export default function App() {
             }
             return seat;
           }));
+          fetchSeats();
 
           setAddStudentOpen(false);
           showToast(`<b>${studentData.name}</b> registered — seat ${studentData.seat}, ${studentData.shift} shift.`);
@@ -1129,7 +1207,7 @@ export default function App() {
       city: obLibCity,
       state: obLibState,
       address: obLibAddress,
-      shifts: Object.keys(obShifts).filter(k => obShifts[k]).join(','),
+      shifts: Object.keys(obShifts).filter(k => obShifts[k]).map(k => `${k} (${obShiftTimings[k]})`).join(','),
       totalSeats: obTotalSeats,
       monthlyFee: obFeeAmount,
       dueDay: obDueDay,
@@ -1160,11 +1238,11 @@ export default function App() {
           // Reset seat maps matching configured total
           setFullSeats(buildEmptySeats(obTotalSeats));
           setDashSeats(buildEmptySeats(Math.min(36, obTotalSeats)));
-          
+
           setStudentsList([]);
           setActivityFeed([]);
           setIsTrialExpired(false);
-          
+
           if (data.role === 'ADMIN') {
             navigate('/dashboard');
           } else if (data.role === 'STUDENT') {
@@ -1276,6 +1354,17 @@ export default function App() {
         showToast('Please fill in your name and a password.');
         return;
       }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(obOwnerEmail)) {
+        showToast('Please enter a valid email address.');
+        return;
+      }
+      const phoneRegex = /^[0-9]{10}$/;
+      const cleanMobile = obOwnerMobile ? obOwnerMobile.replace(/[\s-]/g, '') : '';
+      if (cleanMobile && !phoneRegex.test(cleanMobile)) {
+        showToast('Please enter a valid 10-digit mobile number.');
+        return;
+      }
       if (obOwnerPassword !== obOwnerPassword2) {
         showToast('Passwords do not match — please re-check.');
         return;
@@ -1313,11 +1402,27 @@ export default function App() {
     }
   };
 
-  // Filter students based on search string
-  const filteredStudents = studentsList.filter(s => 
-    s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
-    s.mobile.replace(/\s/g, '').includes(studentSearch.replace(/\s/g, ''))
-  );
+  // Filter students based on search string and active shift filter
+  const filteredStudents = studentsList.filter(s => {
+    const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.mobile.replace(/\s/g, '').includes(studentSearch.replace(/\s/g, ''));
+    if (!matchesSearch) return false;
+
+    if (studentShiftFilter === 'All shifts') return true;
+
+    let activeShift = '';
+    const lowerFilter = studentShiftFilter.toLowerCase();
+    if (lowerFilter.includes('morning')) {
+      activeShift = 'morning';
+    } else if (lowerFilter.includes('evening')) {
+      activeShift = 'evening';
+    } else if (lowerFilter.includes('full')) {
+      activeShift = 'full day';
+    }
+
+    const stShift = (s.shift || '').toLowerCase().replace('_', ' ');
+    return stShift === activeShift;
+  });
 
   const isEmailValid = obOwnerEmail.includes('@') && obOwnerEmail.includes('.');
 
@@ -1329,41 +1434,41 @@ export default function App() {
       <Routes>
         <Route path="/login" element={
           <div id="login-screen">
-          <div className="login-brand">
-            <div className="login-brand-top">
-              <div className="brand">
-                <div className="brand-mark">S</div>
-                <div>
-                  <div className="brand-name">StudySpace</div>
-                  <div className="brand-sub">Register &amp; Desk</div>
+            <div className="login-brand">
+              <div className="login-brand-top">
+                <div className="brand">
+                  <div className="brand-mark">S</div>
+                  <div>
+                    <div className="brand-name">StudySpace</div>
+                    <div className="brand-sub">Register &amp; Desk</div>
+                  </div>
                 </div>
               </div>
+              <div>
+                <div className="login-quote">“Every seat filled, every fee tracked — the whole register, in one place.”</div>
+                <div className="login-quote-attr">Built for Indian study libraries &amp; reading rooms</div>
+              </div>
+              <div className="login-foot">© 2026 StudySpace · Sunrise Reading Room</div>
+              <div className="login-stamp-deco"><span>VERIFIED</span></div>
             </div>
-            <div>
-              <div className="login-quote">“Every seat filled, every fee tracked — the whole register, in one place.”</div>
-              <div className="login-quote-attr">Built for Indian study libraries &amp; reading rooms</div>
-            </div>
-            <div className="login-foot">© 2026 StudySpace · Sunrise Reading Room</div>
-            <div className="login-stamp-deco"><span>VERIFIED</span></div>
-          </div>
 
-          <div className="login-form-wrap">
-            <div className="login-card">
-              {!showOtpView ? (
-                <div>
-                  <div className="login-eyebrow">Welcome back</div>
-                  <h1 className="login-title">Log in to your desk</h1>
-                  <div className="login-sub">Enter your registered email to access your account.</div>
+            <div className="login-form-wrap">
+              <div className="login-card">
+                {!showOtpView ? (
+                  <div>
+                    <div className="login-eyebrow">Welcome back</div>
+                    <h1 className="login-title">Log in to your desk</h1>
+                    <div className="login-sub">Enter your registered email to access your account.</div>
 
-                  {/*
+                    {/*
                   <div className="login-tabs">
                     <div className={`login-tab ${loginTab === 'mobile' ? 'active' : ''}`} onClick={() => setLoginTab('mobile')}>Mobile number</div>
                     <div className={`login-tab ${loginTab === 'email' ? 'active' : ''}`} onClick={() => setLoginTab('email')}>Email</div>
                   </div>
                   */}
 
-                  <form onSubmit={handleOwnerLogin}>
-                    {/*
+                    <form onSubmit={handleOwnerLogin}>
+                      {/*
                     {loginTab === 'mobile' ? (
                       <div className="field">
                         <label>Mobile number</label>
@@ -1376,1423 +1481,1513 @@ export default function App() {
                       </div>
                     )}
                     */}
-                    <div className="field">
-                      <label>Email address</label>
-                      <input type="email" placeholder="ritik@sunrisereading.in" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} required />
-                    </div>
-                    <div className="field">
-                      <label>Password</label>
-                      <div className="password-wrapper">
-                        <input
-                          type={showLoginPassword ? "text" : "password"}
-                          placeholder="••••••••"
-                          value={ownerPassword}
-                          onChange={(e) => setOwnerPassword(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="password-toggle-btn"
-                          onClick={() => setShowLoginPassword(!showLoginPassword)}
-                          aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                        >
-                          {showLoginPassword ? (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          ) : (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="field-row">
-                      <label className="remember">
-                        <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} style={{ width: 'auto' }} /> Keep me logged in
-                      </label>
-                      <a href="#" onClick={(e) => e.preventDefault()}>Forgot password?</a>
-                    </div>
-                    <button type="submit" className="btn btn-primary login-btn">Log in</button>
-                  </form>
-
-                  <div className="login-divider">or</div>
-                  <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(true)}>Send OTP instead</button>
-                  <div className="login-note" style={{ marginTop: '20px' }}>
-                    New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <div className="login-eyebrow">OTP Access</div>
-                  <h1 className="login-title">Log in with OTP</h1>
-                  <div className="login-sub">We will send a one-time code to your registered email address.</div>
-
-                  <form onSubmit={otpSent ? handleVerifyOtpLogin : handleSendOtpLogin}>
-                    <div className="field">
-                      <label>Email address</label>
-                      <input type="email" placeholder="e.g. ritik@sunrisereading.in" value={otpEmail} onChange={(e) => setOtpEmail(e.target.value)} disabled={otpSent} required />
-                    </div>
-
-                    {otpSent && (
                       <div className="field">
-                        <label>Enter the 4-digit code sent to your email</label>
-                        <input type="text" placeholder="e.g. 1234" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} required />
+                        <label>Email address</label>
+                        <input type="email" placeholder="ritik@sunrisereading.in" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} required />
                       </div>
-                    )}
+                      <div className="field">
+                        <label>Password</label>
+                        <div className="password-wrapper">
+                          <input
+                            type={showLoginPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            value={ownerPassword}
+                            onChange={(e) => setOwnerPassword(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="password-toggle-btn"
+                            onClick={() => setShowLoginPassword(!showLoginPassword)}
+                            aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                          >
+                            {showLoginPassword ? (
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                            ) : (
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="field-row">
+                        <label className="remember">
+                          <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} style={{ width: 'auto' }} /> Keep me logged in
+                        </label>
+                        <a href="#" onClick={(e) => e.preventDefault()}>Forgot password?</a>
+                      </div>
+                      <button type="submit" className="btn btn-primary login-btn">Log in</button>
+                    </form>
 
-                    <div className="field-row" style={{ marginTop: '10px', marginBottom: '15px' }}>
+                    <div className="login-divider">or</div>
+                    <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(true)}>Send OTP instead</button>
+                    <div className="login-note" style={{ marginTop: '20px' }}>
+                      New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="login-eyebrow">OTP Access</div>
+                    <h1 className="login-title">Log in with OTP</h1>
+                    <div className="login-sub">We will send a one-time code to your registered email address.</div>
+
+                    <form onSubmit={otpSent ? handleVerifyOtpLogin : handleSendOtpLogin}>
+                      <div className="field">
+                        <label>Email address</label>
+                        <input type="email" placeholder="e.g. ritik@sunrisereading.in" value={otpEmail} onChange={(e) => setOtpEmail(e.target.value)} disabled={otpSent} required />
+                      </div>
+
                       {otpSent && (
-                        <div>
-                          {timer > 0 ? (
-                            <span style={{ fontSize: '14px', color: '#888' }}>Resend OTP in {timer}s</span>
-                          ) : (
-                            <a href="#" onClick={(e) => { e.preventDefault(); handleSendOtpLogin(); }}>Resend OTP</a>
-                          )}
+                        <div className="field">
+                          <label>Enter the 4-digit code sent to your email</label>
+                          <input type="text" placeholder="e.g. 1234" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} required />
                         </div>
                       )}
+
+                      <div className="field-row" style={{ marginTop: '10px', marginBottom: '15px' }}>
+                        {otpSent && (
+                          <div>
+                            {timer > 0 ? (
+                              <span style={{ fontSize: '14px', color: '#888' }}>Resend OTP in {timer}s</span>
+                            ) : (
+                              <a href="#" onClick={(e) => { e.preventDefault(); handleSendOtpLogin(); }}>Resend OTP</a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <button type="submit" className="btn btn-primary login-btn">
+                        {otpSent ? 'Verify & Login' : 'Send OTP'}
+                      </button>
+                    </form>
+
+                    <div className="login-divider">or</div>
+                    <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(false)}>Log in with password instead</button>
+                    <div className="login-note" style={{ marginTop: '20px' }}>
+                      New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
                     </div>
-
-                    <button type="submit" className="btn btn-primary login-btn">
-                      {otpSent ? 'Verify & Login' : 'Send OTP'}
-                    </button>
-                  </form>
-
-                  <div className="login-divider">or</div>
-                  <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(false)}>Log in with password instead</button>
-                  <div className="login-note" style={{ marginTop: '20px' }}>
-                    New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
           </div>
         } />
 
         <Route path="/onboarding" element={
           <div id="onboarding-screen" className="open">
-          <div className="onboarding-top">
-            <div className="brand">
-              <div className="brand-mark">S</div>
-              <div>
-                <div className="brand-name">StudySpace</div>
-                <div className="brand-sub">Set up your library</div>
+            <div className="onboarding-top">
+              <div className="brand">
+                <div className="brand-mark">S</div>
+                <div>
+                  <div className="brand-name">StudySpace</div>
+                  <div className="brand-sub">Set up your library</div>
+                </div>
               </div>
+              <a href="#" id="back-to-login" onClick={(e) => { e.preventDefault(); navigate('/login'); }}>Already have an account? Log in</a>
             </div>
-            <a href="#" id="back-to-login" onClick={(e) => { e.preventDefault(); navigate('/login'); }}>Already have an account? Log in</a>
-          </div>
 
-          <div className="onboarding-wrap">
-            <div className="onboarding-card">
-              <div className="ob-progress">
-                <div className={`ob-step-item ${obStep > 1 ? 'done' : ''} ${obStep === 1 ? 'active' : ''}`}>
-                  <div className="ob-step-circle">1</div><div className="ob-step-label">Account</div>
-                </div>
-                <div className={`ob-step-line ${obStep > 1 ? 'done' : ''}`}></div>
-                <div className={`ob-step-item ${obStep > 2 ? 'done' : ''} ${obStep === 2 ? 'active' : ''}`}>
-                  <div className="ob-step-circle">2</div><div className="ob-step-label">Library</div>
-                </div>
-                <div className={`ob-step-line ${obStep > 2 ? 'done' : ''}`}></div>
-                <div className={`ob-step-item ${obStep > 3 ? 'done' : ''} ${obStep === 3 ? 'active' : ''}`}>
-                  <div className="ob-step-circle">3</div><div className="ob-step-label">Seats &amp; fees</div>
-                </div>
-                <div className={`ob-step-line ${obStep > 3 ? 'done' : ''}`}></div>
-                <div className={`ob-step-item ${obStep > 4 ? 'done' : ''} ${obStep === 4 ? 'active' : ''}`}>
-                  <div className="ob-step-circle">4</div><div className="ob-step-label">Plan</div>
-                </div>
-              </div>
-
-              <div className="ob-panel">
-                {/* STEP 1 — Owner account */}
-                {obStep === 1 && (
-                  <div className="ob-step-content active">
-                    <div className="ob-step-eyebrow">Step 1 of 4</div>
-                    <h2 className="ob-step-title">Create your account</h2>
-                    <div className="ob-step-sub">You'll use this email and password to log in as the library owner.</div>
-                    <div className="form-grid">
-                      <div className="field span-2">
-                        <label>Your full name</label>
-                        <input type="text" placeholder="e.g. Ritik Sharma" value={obOwnerName} onChange={(e) => setObOwnerName(e.target.value)} required />
-                      </div>
-                      <div className="field">
-                        <label>Email address</label>
-                        <input type="email" placeholder="you@library.in" value={obOwnerEmail} onChange={(e) => setObOwnerEmail(e.target.value)} required disabled={obEmailVerified} />
-                        {isEmailValid && !obEmailVerified && (
-                          <button type="button" className="btn btn-ghost" style={{ marginTop: '8px', padding: '6px 12px' }} onClick={handleSendOnboardingOtp}>
-                            Verify Email
-                          </button>
-                        )}
-                        {obEmailVerified && <span style={{ color: 'var(--teal)', fontSize: '12px', display: 'block', marginTop: '6px' }}>✓ Verified</span>}
-                      </div>
-                      <div className="field">
-                        <label>Mobile number (optional)</label>
-                        <input type="tel" placeholder="98110 22341" value={obOwnerMobile} onChange={(e) => setObOwnerMobile(e.target.value)} />
-                      </div>
-                      
-                      {obOtpSent && !obEmailVerified && (
-                        <div className="field span-2" style={{ border: '1px dashed var(--rule)', padding: '16px', borderRadius: '8px' }}>
-                          <label>Enter OTP sent to your Email</label>
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <input type="text" placeholder="Enter 4-digit OTP" value={obOtpValue} onChange={(e) => setObOtpValue(e.target.value)} />
-                            <button type="button" className="btn btn-primary" onClick={handleVerifyOnboardingOtp}>Verify OTP</button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="field">
-                        <label>Password</label>
-                        <div className="password-wrapper">
-                          <input
-                            type={showSignupPassword ? "text" : "password"}
-                            placeholder="Create a password"
-                            value={obOwnerPassword}
-                            onChange={(e) => setObOwnerPassword(e.target.value)}
-                            required
-                          />
-                          <button
-                            type="button"
-                            className="password-toggle-btn"
-                            onClick={() => setShowSignupPassword(!showSignupPassword)}
-                            aria-label={showSignupPassword ? "Hide password" : "Show password"}
-                          >
-                            {showSignupPassword ? (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                            ) : (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="field">
-                        <label>Confirm password</label>
-                        <div className="password-wrapper">
-                          <input
-                            type={showSignupConfirmPassword ? "text" : "password"}
-                            placeholder="Re-enter password"
-                            value={obOwnerPassword2}
-                            onChange={(e) => setObOwnerPassword2(e.target.value)}
-                            required
-                          />
-                          <button
-                            type="button"
-                            className="password-toggle-btn"
-                            onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
-                            aria-label={showSignupConfirmPassword ? "Hide password" : "Show password"}
-                          >
-                            {showSignupConfirmPassword ? (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                            ) : (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+            <div className="onboarding-wrap">
+              <div className="onboarding-card">
+                <div className="ob-progress">
+                  <div className={`ob-step-item ${obStep > 1 ? 'done' : ''} ${obStep === 1 ? 'active' : ''}`}>
+                    <div className="ob-step-circle">1</div><div className="ob-step-label">Account</div>
                   </div>
-                )}
-
-                {/* STEP 2 — Library details */}
-                {obStep === 2 && (
-                  <div className="ob-step-content active">
-                    <div className="ob-step-eyebrow">Step 2 of 4</div>
-                    <h2 className="ob-step-title">Tell us about your library</h2>
-                    <div className="ob-step-sub">This appears on receipts and reports your students will see.</div>
-                    <div className="form-grid">
-                      <div className="field span-2">
-                        <label>Library name</label>
-                        <input type="text" placeholder="e.g. Sunrise Reading Room" value={obLibName} onChange={(e) => setObLibName(e.target.value)} required />
-                      </div>
-                      <div className="field">
-                        <label>City / area</label>
-                        <input type="text" placeholder="e.g. Sector 12, Dadri" value={obLibCity} onChange={(e) => setObLibCity(e.target.value)} required />
-                      </div>
-                      <div className="field">
-                        <label>State</label>
-                        <input type="text" placeholder="e.g. Uttar Pradesh" value={obLibState} onChange={(e) => setObLibState(e.target.value)} />
-                      </div>
-                      <div className="field span-2">
-                        <label>Full address</label>
-                        <textarea rows="2" placeholder="Building, street, landmark" value={obLibAddress} onChange={(e) => setObLibAddress(e.target.value)}></textarea>
-                      </div>
-                      <div className="field span-2">
-                        <label>Which shifts do you run?</label>
-                        <div className="ob-check-row">
-                          {['Morning', 'Evening', 'Full day'].map((shiftName) => (
-                            <label className="ob-check" key={shiftName}>
-                              <input
-                                type="checkbox"
-                                checked={obShifts[shiftName]}
-                                onChange={(e) => setObShifts({ ...obShifts, [shiftName]: e.target.checked })}
-                              />
-                              <span>
-                                {shiftName}
-                                <span className="ob-check-time">
-                                  {shiftName === 'Morning' && '7 AM – 2 PM'}
-                                  {shiftName === 'Evening' && '2 PM – 9 PM'}
-                                  {shiftName === 'Full day' && '7 AM – 9 PM'}
-                                </span>
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                  <div className={`ob-step-line ${obStep > 1 ? 'done' : ''}`}></div>
+                  <div className={`ob-step-item ${obStep > 2 ? 'done' : ''} ${obStep === 2 ? 'active' : ''}`}>
+                    <div className="ob-step-circle">2</div><div className="ob-step-label">Library</div>
                   </div>
-                )}
-
-                {/* STEP 3 — Seats & fees */}
-                {obStep === 3 && (
-                  <div className="ob-step-content active">
-                    <div className="ob-step-eyebrow">Step 3 of 4</div>
-                    <h2 className="ob-step-title">Set up seats &amp; fees</h2>
-                    <div className="ob-step-sub">You can change these anytime from Settings once you're in.</div>
-                    <div className="form-grid">
-                      <div className="field">
-                        <label>Total seats</label>
-                        <input type="number" placeholder="e.g. 60" min="1" value={obTotalSeats} onChange={(e) => setObTotalSeats(parseInt(e.target.value, 10))} required />
-                      </div>
-                      <div className="field">
-                        <label>Monthly fee per seat (₹)</label>
-                        <input type="number" placeholder="e.g. 800" min="0" value={obFeeAmount} onChange={(e) => setObFeeAmount(parseInt(e.target.value, 10))} required />
-                      </div>
-                      <div className="field">
-                        <label>Fee due day of month</label>
-                        <select value={obDueDay} onChange={(e) => setObDueDay(parseInt(e.target.value, 10))}>
-                          {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                            <option key={d} value={d}>
-                              {d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'} of the month
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label>Accepted payment methods</label>
-                        <div className="ob-check-row" style={{ marginTop: '2px' }}>
-                          {['Cash', 'UPI', 'Bank Transfer'].map((method) => (
-                            <label className="ob-check" key={method}>
-                              <input
-                                type="checkbox"
-                                checked={obPayMethods[method]}
-                                onChange={(e) => setObPayMethods({ ...obPayMethods, [method]: e.target.checked })}
-                              />
-                              <span>{method}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                  <div className={`ob-step-line ${obStep > 2 ? 'done' : ''}`}></div>
+                  <div className={`ob-step-item ${obStep > 3 ? 'done' : ''} ${obStep === 3 ? 'active' : ''}`}>
+                    <div className="ob-step-circle">3</div><div className="ob-step-label">Seats &amp; fees</div>
                   </div>
-                )}
+                  <div className={`ob-step-line ${obStep > 3 ? 'done' : ''}`}></div>
+                  <div className={`ob-step-item ${obStep > 4 ? 'done' : ''} ${obStep === 4 ? 'active' : ''}`}>
+                    <div className="ob-step-circle">4</div><div className="ob-step-label">Plan</div>
+                  </div>
+                </div>
 
-                {/* STEP 4 — Choose Plan selection (Step 4 of 4) */}
-                {obStep === 4 && (
-                  <div className="ob-step-content active">
-                    <div className="ob-step-eyebrow">Step 4 of 4</div>
-                    <h2 className="ob-step-title">Choose your plan</h2>
-                    <div className="ob-step-sub">Pick the plan that fits your library. You can upgrade or downgrade anytime from Settings.</div>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0' }}>
-                      {((plansList && plansList.length > 0) ? plansList : [
-                        { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
-                        { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
-                        { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
-                      ]).map(plan => (
-                        <div
-                          key={plan.id}
-                          onClick={() => setSelectedPlanId(plan.id)}
-                          style={{
-                            border: selectedPlanId === plan.id ? '2px solid var(--teal)' : '1px solid var(--rule)',
-                            background: selectedPlanId === plan.id ? 'var(--teal-tint)' : 'var(--card)',
-                            borderRadius: '12px',
-                            padding: '20px',
-                            cursor: 'pointer',
-                            textAlign: 'center',
-                            position: 'relative'
-                          }}
-                        >
-                          {plan.planName === 'Growth' && (
-                            <span style={{
-                              position: 'absolute',
-                              top: '-12px',
-                              left: '50%',
-                              transform: 'translateX(-50%)',
-                              background: 'var(--mustard)',
-                              color: 'var(--ink)',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                              padding: '2px 8px',
-                              borderRadius: '10px',
-                              textTransform: 'uppercase'
-                            }}>Most Popular</span>
+                <div className="ob-panel">
+                  {/* STEP 1 — Owner account */}
+                  {obStep === 1 && (
+                    <div className="ob-step-content active">
+                      <div className="ob-step-eyebrow">Step 1 of 4</div>
+                      <h2 className="ob-step-title">Create your account</h2>
+                      <div className="ob-step-sub">You'll use this email and password to log in as the library owner.</div>
+                      <div className="form-grid">
+                        <div className="field span-2">
+                          <label>Your full name</label>
+                          <input type="text" placeholder="e.g. Ritik Sharma" value={obOwnerName} onChange={(e) => setObOwnerName(e.target.value)} required />
+                        </div>
+                        <div className="field">
+                          <label>Email address</label>
+                          <input type="email" placeholder="you@library.in" value={obOwnerEmail} onChange={(e) => setObOwnerEmail(e.target.value)} required disabled={obEmailVerified} />
+                          {isEmailValid && !obEmailVerified && (
+                            <button type="button" className="btn btn-ghost" style={{ marginTop: '8px', padding: '6px 12px' }} onClick={handleSendOnboardingOtp}>
+                              Verify Email
+                            </button>
                           )}
-                          <h3 style={{ margin: '0 0 10px 0', fontFamily: 'var(--display)' }}>{plan.planName}</h3>
-                          <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--ink)', margin: '10px 0' }}>
-                            ₹{plan.monthlyPrice}<span style={{ fontSize: '13px', color: 'var(--muted)' }}>/mo</span>
-                          </div>
-                          <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>{plan.description}</p>
+                          {obEmailVerified && <span style={{ color: 'var(--teal)', fontSize: '12px', display: 'block', marginTop: '6px' }}>✓ Verified</span>}
                         </div>
-                      ))}
-                    </div>
+                        <div className="field">
+                          <label>Mobile number (optional)</label>
+                          <input type="tel" placeholder="9811022341" maxLength={10} value={obOwnerMobile} onChange={(e) => setObOwnerMobile(e.target.value)} />
+                        </div>
 
-                    <div style={{ background: 'var(--paper-deep)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', margin: '20px 0' }}>
-                      <span>🎁</span>
-                      <span>14-day free trial included — you won't be charged today.</span>
-                    </div>
-                  </div>
-                )}
+                        {obOtpSent && !obEmailVerified && (
+                          <div className="field span-2" style={{ border: '1px dashed var(--rule)', padding: '16px', borderRadius: '8px' }}>
+                            <label>Enter OTP sent to your Email</label>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <input type="text" placeholder="Enter 4-digit OTP" value={obOtpValue} onChange={(e) => setObOtpValue(e.target.value)} />
+                              <button type="button" className="btn btn-primary" onClick={handleVerifyOnboardingOtp}>Verify OTP</button>
+                            </div>
+                          </div>
+                        )}
 
-                <div className="ob-actions">
-                  <button className="btn btn-ghost" style={{ visibility: obStep === 1 ? 'hidden' : 'visible' }} onClick={handleObBack}>Back</button>
-                  {obStep === 4 ? (
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button className="btn btn-ghost" onClick={() => handleOnboardingRegisterSubmit(true)}>Skip for Free plan</button>
-                      <button className="btn btn-primary" onClick={handlePaidCheckout}>Start trial &amp; activate dashboard →</button>
+                        <div className="field">
+                          <label>Password</label>
+                          <div className="password-wrapper">
+                            <input
+                              type={showSignupPassword ? "text" : "password"}
+                              placeholder="Create a password"
+                              value={obOwnerPassword}
+                              onChange={(e) => setObOwnerPassword(e.target.value)}
+                              required
+                            />
+                            <button
+                              type="button"
+                              className="password-toggle-btn"
+                              onClick={() => setShowSignupPassword(!showSignupPassword)}
+                              aria-label={showSignupPassword ? "Hide password" : "Show password"}
+                            >
+                              {showSignupPassword ? (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                              ) : (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>Confirm password</label>
+                          <div className="password-wrapper">
+                            <input
+                              type={showSignupConfirmPassword ? "text" : "password"}
+                              placeholder="Re-enter password"
+                              value={obOwnerPassword2}
+                              onChange={(e) => setObOwnerPassword2(e.target.value)}
+                              required
+                            />
+                            <button
+                              type="button"
+                              className="password-toggle-btn"
+                              onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
+                              aria-label={showSignupConfirmPassword ? "Hide password" : "Show password"}
+                            >
+                              {showSignupConfirmPassword ? (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                              ) : (
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <button className="btn btn-primary" onClick={handleObNext}>
-                      {obStep === 3 ? 'Continue to payment →' : 'Continue'}
-                    </button>
                   )}
+
+                  {/* STEP 2 — Library details */}
+                  {obStep === 2 && (
+                    <div className="ob-step-content active">
+                      <div className="ob-step-eyebrow">Step 2 of 4</div>
+                      <h2 className="ob-step-title">Tell us about your library</h2>
+                      <div className="ob-step-sub">This appears on receipts and reports your students will see.</div>
+                      <div className="form-grid">
+                        <div className="field span-2">
+                          <label>Library name</label>
+                          <input type="text" placeholder="e.g. Sunrise Reading Room" value={obLibName} onChange={(e) => setObLibName(e.target.value)} required />
+                        </div>
+                        <div className="field">
+                          <label>City / area</label>
+                          <input type="text" placeholder="e.g. Sector 12, Dadri" value={obLibCity} onChange={(e) => setObLibCity(e.target.value)} required />
+                        </div>
+                        <div className="field">
+                          <label>State</label>
+                          <input type="text" placeholder="e.g. Uttar Pradesh" value={obLibState} onChange={(e) => setObLibState(e.target.value)} />
+                        </div>
+                        <div className="field span-2">
+                          <label>Full address</label>
+                          <textarea rows="2" placeholder="Building, street, landmark" value={obLibAddress} onChange={(e) => setObLibAddress(e.target.value)}></textarea>
+                        </div>
+                        <div className="field span-2">
+                          <label>Which shifts do you run &amp; their timings?</label>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
+                            {['Morning', 'Evening', 'Full day'].map((shiftName) => (
+                              <div key={shiftName} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <label className="ob-check" style={{ margin: 0, minWidth: '110px' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={obShifts[shiftName]}
+                                    onChange={(e) => setObShifts({ ...obShifts, [shiftName]: e.target.checked })}
+                                  />
+                                  <span>{shiftName}</span>
+                                </label>
+                                {obShifts[shiftName] && (
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. 7 AM – 2 PM"
+                                    className="form-control"
+                                    style={{ padding: '6px 10px', fontSize: '12px', maxWidth: '160px', height: '32px' }}
+                                    value={obShiftTimings[shiftName]}
+                                    onChange={(e) => setObShiftTimings({ ...obShiftTimings, [shiftName]: e.target.value })}
+                                    required
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 3 — Seats & fees */}
+                  {obStep === 3 && (
+                    <div className="ob-step-content active">
+                      <div className="ob-step-eyebrow">Step 3 of 4</div>
+                      <h2 className="ob-step-title">Set up seats &amp; fees</h2>
+                      <div className="ob-step-sub">You can change these anytime from Settings once you're in.</div>
+                      <div className="form-grid">
+                        <div className="field">
+                          <label>Total seats</label>
+                          <input type="number" placeholder="e.g. 60" min="1" value={obTotalSeats} onChange={(e) => setObTotalSeats(parseInt(e.target.value, 10))} required />
+                        </div>
+                        <div className="field">
+                          <label>Monthly fee per seat (₹)</label>
+                          <input type="number" placeholder="e.g. 800" min="0" value={obFeeAmount} onChange={(e) => setObFeeAmount(parseInt(e.target.value, 10))} required />
+                        </div>
+                        <div className="field">
+                          <label>Fee due date (day of month)</label>
+                          <input
+                            type="date"
+                            value={(() => {
+                              const today = new Date();
+                              const y = today.getFullYear();
+                              const m = String(today.getMonth() + 1).padStart(2, '0');
+                              const d = String(obDueDay).padStart(2, '0');
+                              return `${y}-${m}-${d}`;
+                            })()}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                const selectedDate = new Date(e.target.value);
+                                const day = selectedDate.getDate();
+                                setObDueDay(day);
+                              }
+                            }}
+                            required
+                          />
+                        </div>
+                        <div className="field">
+                          <label>Accepted payment methods</label>
+                          <div className="ob-check-row" style={{ marginTop: '2px' }}>
+                            {['Cash', 'UPI', 'Bank Transfer'].map((method) => (
+                              <label className="ob-check" key={method}>
+                                <input
+                                  type="checkbox"
+                                  checked={obPayMethods[method]}
+                                  onChange={(e) => setObPayMethods({ ...obPayMethods, [method]: e.target.checked })}
+                                />
+                                <span>{method}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 4 — Choose Plan selection (Step 4 of 4) */}
+                  {obStep === 4 && (
+                    <div className="ob-step-content active">
+                      <div className="ob-step-eyebrow">Step 4 of 4</div>
+                      <h2 className="ob-step-title">Choose your plan</h2>
+                      <div className="ob-step-sub">Pick the plan that fits your library. You can upgrade or downgrade anytime from Settings.</div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0' }}>
+                        {((plansList && plansList.length > 0) ? plansList : [
+                          { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
+                          { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
+                          { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
+                        ]).map(plan => (
+                          <div
+                            key={plan.id}
+                            onClick={() => setSelectedPlanId(plan.id)}
+                            style={{
+                              border: selectedPlanId === plan.id ? '2px solid var(--teal)' : '1px solid var(--rule)',
+                              background: selectedPlanId === plan.id ? 'var(--teal-tint)' : 'var(--card)',
+                              borderRadius: '12px',
+                              padding: '20px',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              position: 'relative'
+                            }}
+                          >
+                            {plan.planName === 'Growth' && (
+                              <span style={{
+                                position: 'absolute',
+                                top: '-12px',
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                background: 'var(--mustard)',
+                                color: 'var(--ink)',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                textTransform: 'uppercase'
+                              }}>Most Popular</span>
+                            )}
+                            <h3 style={{ margin: '0 0 10px 0', fontFamily: 'var(--display)' }}>{plan.planName}</h3>
+                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--ink)', margin: '10px 0' }}>
+                              ₹{plan.monthlyPrice}<span style={{ fontSize: '13px', color: 'var(--muted)' }}>/mo</span>
+                            </div>
+                            <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>{plan.description}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ background: 'var(--paper-deep)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', margin: '20px 0' }}>
+                        <span>🎁</span>
+                        <span>14-day free trial included — you won't be charged today.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="ob-actions">
+                    <button className="btn btn-ghost" style={{ visibility: obStep === 1 ? 'hidden' : 'visible' }} onClick={handleObBack}>Back</button>
+                    {obStep === 4 ? (
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button className="btn btn-ghost" onClick={() => handleOnboardingRegisterSubmit(true)}>Skip for Free plan</button>
+                        <button className="btn btn-primary" onClick={handlePaidCheckout}>Start trial &amp; activate dashboard →</button>
+                      </div>
+                    ) : (
+                      <button className="btn btn-primary" onClick={handleObNext}>
+                        {obStep === 3 ? 'Continue to payment →' : 'Continue'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
           </div>
         } />
 
         <Route path="/dashboard" element={
           <div className="app">
-          {/* ============ SIDEBAR ============ */}
-          <nav className="sidebar">
-            <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
-              <div className="brand-mark">S</div>
-              <div>
-                <div className="brand-name">StudySpace</div>
-                <div className="brand-sub">Register &amp; Desk</div>
+            {/* ============ SIDEBAR ============ */}
+            <nav className="sidebar">
+              <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
+                <div className="brand-mark">S</div>
+                <div>
+                  <div className="brand-name">StudySpace</div>
+                  <div className="brand-sub">Register &amp; Desk</div>
+                </div>
               </div>
-            </div>
-            <ul className="navlist">
-              {[
-                { id: 'dashboard', label: 'Dashboard' },
-                { id: 'students', label: 'Students' },
-                { id: 'seats', label: 'Seats' },
-                { id: 'fees', label: 'Fees' },
-                { id: 'attendance', label: 'Attendance' },
-                { id: 'reports', label: 'Reports' },
-                { id: 'settings', label: 'Settings' }
-              ].map((view) => (
-                <li
-                  key={view.id}
-                  className={`navitem ${activeView === view.id ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveView(view.id);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+              <ul className="navlist">
+                {[
+                  { id: 'dashboard', label: 'Dashboard' },
+                  { id: 'students', label: 'Students' },
+                  { id: 'seats', label: 'Seats' },
+                  { id: 'fees', label: 'Fees' },
+                  { id: 'attendance', label: 'Attendance' },
+                  { id: 'reports', label: 'Reports' },
+                  { id: 'settings', label: 'Settings' }
+                ].map((view) => (
+                  <li
+                    key={view.id}
+                    className={`navitem ${activeView === view.id ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveView(view.id);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  >
+                    <span className="dot"></span>
+                    {view.label}
+                  </li>
+                ))}
+              </ul>
+              <div className="sidebar-foot">
+                <div style={{ marginBottom: '12px', fontSize: '12px', opacity: 0.8, color: 'var(--ink-soft)' }}>
+                  {libraryName}<br />
+                  {libraryCity} &middot; {totalSeats} seats
+                </div>
+                <div
+                  className="navitem"
+                  onClick={handleLogout}
+                  style={{
+                    opacity: 0.6,
+                    padding: '8px 0',
+                    marginTop: '8px',
+                    borderTop: '1px solid rgba(239,232,214,0.15)',
+                    cursor: 'pointer',
+                    transition: 'opacity 0.2s ease'
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
                 >
-                  <span className="dot"></span>
-                  {view.label}
-                </li>
-              ))}
-            </ul>
-            <div className="sidebar-foot">
-              <div style={{ marginBottom: '12px', fontSize: '12px', opacity: 0.8, color: 'var(--ink-soft)' }}>
-                {libraryName}<br />
-                {libraryCity} &middot; {totalSeats} seats
-              </div>
-              <div 
-                className="navitem" 
-                onClick={handleLogout}
-                style={{ 
-                  opacity: 0.6,
-                  padding: '8px 0',
-                  marginTop: '8px',
-                  borderTop: '1px solid rgba(239,232,214,0.15)',
-                  cursor: 'pointer',
-                  transition: 'opacity 0.2s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
-              >
-                <span className="dot" style={{ background: 'var(--terracotta, #e11d48)' }}></span>
-                Log out
-              </div>
-            </div>
-          </nav>
-
-          {/* ============ MAIN CONTENT ============ */}
-          <main className="content">
-
-            {isTrialExpired ? (
-              <section className="view active">
-                <div className="topbar">
-                  <h1 className="page-title">Please upgrade your account</h1>
+                  <span className="dot" style={{ background: 'var(--terracotta, #e11d48)' }}></span>
+                  Log out
                 </div>
-                <div className="panel" style={{ padding: '30px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '16px', color: 'var(--terracotta)', fontWeight: 'bold' }}>
-                    Your 14-day free trial has expired!
-                  </p>
-                  <p style={{ color: 'var(--muted)', marginBottom: '30px' }}>
-                    To continue using the dashboard features, please choose a subscription plan below to upgrade.
-                  </p>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0', textAlign: 'left' }}>
-                    {[
-                      { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
-                      { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
-                      { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
-                    ].map(plan => (
-                      <div
-                        key={plan.id}
-                        style={{
-                          border: '1px solid var(--rule)',
-                          background: 'var(--card)',
-                          borderRadius: '12px',
-                          padding: '20px'
-                        }}
-                      >
-                        <h3 style={{ margin: '0 0 10px 0', fontFamily: 'var(--display)' }}>{plan.planName}</h3>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--ink)', margin: '10px 0' }}>
-                          ₹{plan.monthlyPrice}<span style={{ fontSize: '13px', color: 'var(--muted)' }}>/mo</span>
-                        </div>
-                        <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '20px' }}>{plan.description}</p>
-                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => handleUpgradeAccount(plan.id)}>
-                          Upgrade Now
-                        </button>
-                      </div>
-                    ))}
+                <div style={{ marginTop: '16px', marginBottom: '12px', fontSize: '12px', opacity: 0.9, color: 'rgba(255, 255, 255, 0.5)', fontWeight: '500', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  Crafted by Scriza
+                </div>
+              </div>
+            </nav>
+
+            {/* ============ MAIN CONTENT ============ */}
+            <main className="content">
+
+              {isTrialExpired ? (
+                <section className="view active">
+                  <div className="topbar">
+                    <h1 className="page-title">Please upgrade your account</h1>
                   </div>
-                </div>
-              </section>
-            ) : (
-              <React.Fragment>
-                {/* ================= DASHBOARD ================= */}
-                {activeView === 'dashboard' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Saturday, 4 July</div>
-                        <h1 className="page-title">Good morning, {ownerName.split(' ')[0]}</h1>
-                      </div>
-                      <div className="topbar-actions">
-                        <button className="btn btn-ghost" onClick={() => setActiveView('attendance')}>Today's register</button>
-                        <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
-                      </div>
-                    </div>
+                  <div className="panel" style={{ padding: '30px', textAlign: 'center' }}>
+                    <p style={{ fontSize: '16px', color: 'var(--terracotta)', fontWeight: 'bold' }}>
+                      Your 14-day free trial has expired!
+                    </p>
+                    <p style={{ color: 'var(--muted)', marginBottom: '30px' }}>
+                      To continue using the dashboard features, please choose a subscription plan below to upgrade.
+                    </p>
 
-                    <div className="stat-strip">
-                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
-                        <div className="stat-label">Total Seats</div>
-                        <div className="stat-value">{dashboardData ? dashboardData.totalSeats : totalSeats}</div>
-                      </div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
-                        <div className="stat-label">Occupied</div>
-                        <div className="stat-value">
-                          {dashboardData ? dashboardData.occupiedSeats : occupiedCount} <span className="stat-suffix">/ {dashboardData ? dashboardData.totalSeats : totalSeats}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0', textAlign: 'left' }}>
+                      {[
+                        { id: 1, planName: 'Starter', monthlyPrice: 499, description: 'Up to 100 seats · core modules' },
+                        { id: 2, planName: 'Growth', monthlyPrice: 999, description: 'Up to 300 seats · student panel included' },
+                        { id: 3, planName: 'Pro', monthlyPrice: 1499, description: 'Unlimited seats · priority support' }
+                      ].map(plan => (
+                        <div
+                          key={plan.id}
+                          style={{
+                            border: '1px solid var(--rule)',
+                            background: 'var(--card)',
+                            borderRadius: '12px',
+                            padding: '20px'
+                          }}
+                        >
+                          <h3 style={{ margin: '0 0 10px 0', fontFamily: 'var(--display)' }}>{plan.planName}</h3>
+                          <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--ink)', margin: '10px 0' }}>
+                            ₹{plan.monthlyPrice}<span style={{ fontSize: '13px', color: 'var(--muted)' }}>/mo</span>
+                          </div>
+                          <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '20px' }}>{plan.description}</p>
+                          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => handleUpgradeAccount(plan.id)}>
+                            Upgrade Now
+                          </button>
                         </div>
-                      </div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
-                        <div className="stat-label">Total Students</div>
-                        <div className="stat-value">{dashboardData ? dashboardData.totalStudents : studentsList.length}</div>
-                      </div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
-                        <div className="stat-label">Fees Due</div>
-                        <div className="stat-value">₹{Number(dashboardData ? dashboardData.feesDue : feesDueSum).toLocaleString('en-IN')}</div>
-                      </div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--ink)' }}>
-                        <div className="stat-label">Today's Attendance</div>
-                        <div className="stat-value">{dashboardData ? dashboardData.todayAttendanceCheckedIn : 0}</div>
-                      </div>
+                      ))}
                     </div>
+                  </div>
+                </section>
+              ) : (
+                <React.Fragment>
+                  {/* ================= DASHBOARD ================= */}
+                  {activeView === 'dashboard' && (
+                    <section className="view active">
+                      <div className="topbar">
+                        <div>
+                          <div className="page-eyebrow">Saturday, 4 July</div>
+                          <h1 className="page-title">Good morning, {ownerName.split(' ')[0]}</h1>
+                        </div>
+                        <div className="topbar-actions">
+                          <button className="btn btn-ghost" onClick={() => setActiveView('attendance')}>Today's register</button>
+                          <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
+                        </div>
+                      </div>
 
-                    <div className="grid-2">
-                      <div className="panel">
-                        <div className="panel-head">
-                          <h3 className="panel-title">Seat map</h3>
-                          <span className="panel-link" onClick={() => setActiveView('seats')}>Open full map →</span>
+                      <div className="stat-strip">
+                        <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
+                          <div className="stat-label">Total Seats</div>
+                          <div className="stat-value">{dashboardData ? dashboardData.totalSeats : totalSeats}</div>
                         </div>
-                        <div className="seat-legend">
-                          <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
-                          <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
-                          <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
+                          <div className="stat-label">Occupied</div>
+                          <div className="stat-value">
+                            {dashboardData ? dashboardData.occupiedSeats : occupiedCount} <span className="stat-suffix">/ {dashboardData ? dashboardData.totalSeats : totalSeats}</span>
+                          </div>
                         </div>
-                        <div className="seat-grid">
-                          {dashSeats.map((s, idx) => (
-                            <div key={idx} className={`seat ${s.status}`} title={s.student ? `${s.student} — ${s.status}` : 'Available'}>
-                              {s.label}
+                        <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
+                          <div className="stat-label">Total Students</div>
+                          <div className="stat-value">{dashboardData ? dashboardData.totalStudents : studentsList.length}</div>
+                        </div>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
+                          <div className="stat-label">Fees Due</div>
+                          <div className="stat-value">₹{Number(dashboardData ? dashboardData.feesDue : feesDueSum).toLocaleString('en-IN')}</div>
+                        </div>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--ink)' }}>
+                          <div className="stat-label">Today's Attendance</div>
+                          <div className="stat-value">{dashboardData ? dashboardData.todayAttendanceCheckedIn : 0}</div>
+                        </div>
+                      </div>
+
+                      <div className="grid-2">
+                        <div className="panel">
+                          <div className="panel-head">
+                            <h3 className="panel-title">Seat map</h3>
+                            <span className="panel-link" onClick={() => setActiveView('seats')}>Open full map →</span>
+                          </div>
+                          <div className="seat-legend">
+                            <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
+                            <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
+                            <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
+                          </div>
+                          <div className="seat-grid">
+                            {dashSeats.map((s, idx) => (
+                              <div key={idx} className={`seat ${s.status}`} title={s.student ? `${s.student} — ${s.status}` : 'Available'}>
+                                {s.label}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="panel">
+                          <div className="panel-head"><h3 className="panel-title">Today's activity</h3></div>
+                          <div className="feed">
+                            {activityFeed.length > 0 ? (
+                              activityFeed.map((item, idx) => (
+                                <div className="feed-item" key={idx}>
+                                  <div className="feed-time">{item.time}</div>
+                                  <div className={`feed-dot ${item.dotColor !== 'teal' ? item.dotColor : ''}`}></div>
+                                  <div className="feed-text" dangerouslySetInnerHTML={{ __html: item.text }}></div>
+                                </div>
+                              ))
+                            ) : (
+                              <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.6 }}>
+                                No activity yet. Once students check in or pay fees, you'll see it here first.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid-2">
+                        <div className="panel">
+                          <div className="panel-head"><h3 className="panel-title">Monthly revenue</h3></div>
+                          {dashboardData?.monthlyRevenue && dashboardData.monthlyRevenue.length > 0 ? (() => {
+                            const maxAmt = Math.max(...dashboardData.monthlyRevenue.map(d => d.amount || 0), 1000);
+                            return (
+                              <div className="bars">
+                                {dashboardData.monthlyRevenue.map((item, idx) => {
+                                  const heightPercent = Math.min(85, Math.max(10, ((item.amount || 0) / maxAmt) * 85));
+                                  const isCurrentMonth = idx === dashboardData.monthlyRevenue.length - 1;
+                                  return (
+                                    <div className="bar-col" key={idx} title={`₹${item.amount}`}>
+                                      <div className={`bar ${isCurrentMonth ? 'current' : ''}`} style={{ height: `${heightPercent}%` }}></div>
+                                      <div className="bar-label">{item.month}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })() : (
+                            <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                              Revenue will appear here after your first month of collections.
+                            </div>
+                          )}
+                        </div>
+                        <div className="panel">
+                          <div className="panel-head">
+                            <h3 className="panel-title">Due fees</h3>
+                            <span className="panel-link" onClick={() => setActiveView('fees')}>View all →</span>
+                          </div>
+                          {dashboardData?.dueFees && dashboardData.dueFees.length > 0 ? (
+                            <table className="ledger">
+                              <tbody>
+                                {dashboardData.dueFees.slice(0, 3).map((item, idx) => {
+                                  const foundSt = studentsList.find(s => s.id === item.studentId);
+                                  return (
+                                    <tr key={idx}>
+                                      <td className="cell-name">{foundSt ? foundSt.name : `Student #${item.studentId}`}</td>
+                                      <td className="cell-amount">₹{item.dueAmount}</td>
+                                      <td><span className="stamp due">Due</span></td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <table className="ledger">
+                              <tbody>
+                                <tr>
+                                  <td style={{ color: 'var(--muted)', fontSize: '13px', padding: '14px 10px' }}>
+                                    No dues yet — nothing to collect until your first student joins.
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
+                  {/* ================= STUDENTS ================= */}
+                  {activeView === 'students' && (
+                    <section className="view active">
+                      <div className="topbar">
+                        <div>
+                          <div className="page-eyebrow">Register</div>
+                          <h1 className="page-title">Students</h1>
+                        </div>
+                        <div className="topbar-actions">
+                          <div className="search">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+                            <input placeholder="Search by name or mobile" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} />
+                          </div>
+                          <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
+                        </div>
+                      </div>
+
+                      <div className="toolbar" style={{ marginBottom: '16px' }}>
+                        <div className="filter-chips">
+                          {getParsedShiftsList().map((chip) => (
+                            <div
+                              key={chip}
+                              className={`chip ${studentShiftFilter === chip ? 'active' : ''}`}
+                              onClick={() => setStudentShiftFilter(chip)}
+                            >
+                              {chip}
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      <div className="panel">
-                        <div className="panel-head"><h3 className="panel-title">Today's activity</h3></div>
-                        <div className="feed">
-                          {activityFeed.length > 0 ? (
-                            activityFeed.map((item, idx) => (
-                              <div className="feed-item" key={idx}>
-                                <div className="feed-time">{item.time}</div>
-                                <div className={`feed-dot ${item.dotColor !== 'teal' ? item.dotColor : ''}`}></div>
-                                <div className="feed-text" dangerouslySetInnerHTML={{ __html: item.text }}></div>
-                              </div>
-                            ))
-                          ) : (
-                            <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.6 }}>
-                              No activity yet. Once students check in or pay fees, you'll see it here first.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid-2">
-                      <div className="panel">
-                        <div className="panel-head"><h3 className="panel-title">Monthly revenue</h3></div>
-                        {dashboardData?.monthlyRevenue && dashboardData.monthlyRevenue.length > 0 ? (() => {
-                          const maxAmt = Math.max(...dashboardData.monthlyRevenue.map(d => d.amount || 0), 1000);
-                          return (
-                            <div className="bars">
-                              {dashboardData.monthlyRevenue.map((item, idx) => {
-                                const heightPercent = Math.min(85, Math.max(10, ((item.amount || 0) / maxAmt) * 85));
-                                const isCurrentMonth = idx === dashboardData.monthlyRevenue.length - 1;
-                                return (
-                                  <div className="bar-col" key={idx} title={`₹${item.amount}`}>
-                                    <div className={`bar ${isCurrentMonth ? 'current' : ''}`} style={{ height: `${heightPercent}%` }}></div>
-                                    <div className="bar-label">{item.month}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })() : (
-                          <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
-                            Revenue will appear here after your first month of collections.
-                          </div>
-                        )}
-                      </div>
-                      <div className="panel">
-                        <div className="panel-head">
-                          <h3 className="panel-title">Due fees</h3>
-                          <span className="panel-link" onClick={() => setActiveView('fees')}>View all →</span>
-                        </div>
-                        {dashboardData?.dueFees && dashboardData.dueFees.length > 0 ? (
-                          <table className="ledger">
-                            <tbody>
-                              {dashboardData.dueFees.slice(0, 3).map((item, idx) => {
-                                const foundSt = studentsList.find(s => s.id === item.studentId);
-                                return (
-                                  <tr key={idx}>
-                                    <td className="cell-name">{foundSt ? foundSt.name : `Student #${item.studentId}`}</td>
-                                    <td className="cell-amount">₹{item.dueAmount}</td>
-                                    <td><span className="stamp due">Due</span></td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <table className="ledger">
-                            <tbody>
-                              <tr>
-                                <td style={{ color: 'var(--muted)', fontSize: '13px', padding: '14px 10px' }}>
-                                  No dues yet — nothing to collect until your first student joins.
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {/* ================= STUDENTS ================= */}
-                {activeView === 'students' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Register</div>
-                        <h1 className="page-title">Students</h1>
-                      </div>
-                      <div className="topbar-actions">
-                        <div className="search">
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-                          <input placeholder="Search by name or mobile" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} />
-                        </div>
-                        <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
-                      </div>
-                    </div>
-
-                    {filteredStudents.length > 0 ? (
-                      <>
-                        <div className="panel">
-                          <table className="ledger">
-                            <thead>
-                              <tr><th>Student</th><th>Mobile</th><th>Shift</th><th>Seat</th><th>Joined</th><th>Membership</th><th></th></tr>
-                            </thead>
-                            <tbody>
-                              {filteredStudents.map((s, idx) => (
-                                <tr key={idx}>
-                                  <td className="name-cell">
-                                    {s.profileImage ? (
-                                      <img src={s.profileImage} alt="Avatar" className="avatar" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                                    ) : (
-                                      <span className="avatar">
-                                        {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-                                      </span>
-                                    )}
-                                    <span className="cell-name">{s.name}</span>
-                                  </td>
-                                  <td className="mono">{s.mobile}</td>
-                                  <td>{s.shift}</td>
-                                  <td>{s.seat}</td>
-                                  <td>{s.joined}</td>
-                                  <td>
-                                    <span className={`pill ${s.status}`}>
-                                      {s.status === 'active' ? 'Active' : 'Inactive'}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    <span
-                                      className="panel-link"
-                                      onClick={() => {
-                                        setSelectedStudent(s);
-                                        setViewStudentOpen(true);
-                                      }}
-                                    >
-                                      View
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div className="note">
-                          Showing <span>{filteredStudents.length}</span> of {studentsList.length} students. Search narrows the list instantly — try “rohit” or “98”.
-                        </div>
-                      </>
-                    ) : (
-                      <div className="empty-state">
-                        <div className="empty-state-icon">👤</div>
-                        <h3 className="empty-state-title">{studentSearch ? "No Search Results" : "No Students Registered"}</h3>
-                        <p className="empty-state-desc">
-                          {studentSearch ? `No registered students match "${studentSearch}".` : "Get started by registering your first student into your library ledger."}
-                        </p>
-                        {studentSearch ? (
-                          <button className="btn btn-ghost" onClick={() => setStudentSearch('')}>Clear Search</button>
-                        ) : (
-                          <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
-                        )}
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                {/* ================= SEATS ================= */}
-                {activeView === 'seats' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Floor plan</div>
-                        <h1 className="page-title">Seats</h1>
-                      </div>
-                      <div className="topbar-actions">
-                        <button className="btn btn-ghost" onClick={() => {
-                          setEditingSeatId(null);
-                          setSeatForm({ seatNumber: '', floor: '', section: '' });
-                          setSeatModalOpen(true);
-                        }}>+ Create Seats</button>
-                      </div>
-                    </div>
-
-                    {fullSeats.length > 0 ? (
-                      <>
-                        <div className="toolbar">
-                          <div className="filter-chips">
-                            {['All shifts', 'Morning (7–2)', 'Evening (2–9)', 'Full day'].map((chip) => (
-                              <div
-                                key={chip}
-                                className={`chip ${seatFilter === chip ? 'active' : ''}`}
-                                onClick={() => setSeatFilter(chip)}
-                              >
-                                {chip}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="seat-legend" style={{ margin: 0 }}>
-                            <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
-                            <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
-                            <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
-                          </div>
-                        </div>
-
-                        <div className="grid-2" style={{ gridTemplateColumns: '1.7fr 1fr' }}>
+                      {filteredStudents.length > 0 ? (
+                        <>
                           <div className="panel">
-                            <div className="seat-grid">
-                              {fullSeats.map((s, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`seat ${s.status} ${selectedSeatIndex === idx ? 'selected' : ''}`}
-                                  title={s.student ? `${s.student} — ${s.status}` : 'Available'}
-                                  onClick={() => setSelectedSeatIndex(idx)}
-                                >
-                                  {s.label}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="panel seat-side">
-                            <div className="panel-head"><h3 className="panel-title">Seat detail</h3></div>
-                            {selectedSeatIndex !== null ? (
-                              fullSeats[selectedSeatIndex].status === 'available' ? (
-                                <div className="seat-detail">
-                                  Seat <b>{fullSeats[selectedSeatIndex].label}</b> is available.<br /><br />
-                                  <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
-                                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                                    <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => {
-                                      setEditingSeatId(fullSeats[selectedSeatIndex].id);
-                                      setSeatForm({
-                                        seatNumber: fullSeats[selectedSeatIndex].label,
-                                        floor: fullSeats[selectedSeatIndex].floor || '',
-                                        section: fullSeats[selectedSeatIndex].section || ''
-                                      });
-                                      setSeatModalOpen(true);
-                                    }}>Edit</button>
-                                    <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--terracotta)' }} onClick={() => {
-                                      if(confirm('Are you sure you want to delete this seat?')) {
-                                        api.seatApi.delete(fullSeats[selectedSeatIndex].id)
-                                          .then(res => {
-                                            if(res.success || res.status === 'success') {
-                                              showToast('Seat deleted');
-                                              setSelectedSeatIndex(null);
-                                              fetchSeats();
-                                            } else {
-                                              alert(res.message || "Failed to delete seat.");
-                                            }
-                                          });
-                                      }
-                                    }}>Delete</button>
-                                  </div>
-                                </div>
-                                ) : (() => {
-                                  const currentSeat = fullSeats[selectedSeatIndex];
-                                  const assignedStudent = studentsList.find(st => st.seat === currentSeat.label);
-                                  const todayRecord = assignedStudent ? attendanceList.find(a => a.studentId === assignedStudent.id) : null;
-                                  
-                                  const attStatus = todayRecord ? (todayRecord.status === 'ABSENT' ? 'Absent' : todayRecord.checkOut ? 'Left' : 'Checked In') : 'Absent';
-                                  const attClass = todayRecord ? (todayRecord.status === 'ABSENT' ? 'due' : todayRecord.checkOut ? 'inactive' : 'active') : 'due';
-
-                                  return (
-                                    <div className="seat-detail filled">
-                                      <div className="seat-detail-name">{assignedStudent ? assignedStudent.name : 'Occupied'}</div>
-                                      <div style={{ display: 'flex', gap: '8px', margin: '8px 0 16px 0' }}>
-                                        <span className={`stamp ${currentSeat.status === 'due' ? 'due' : 'paid'}`} style={{ margin: 0 }}>
-                                          {currentSeat.status === 'due' ? 'Due' : 'Paid'}
-                                        </span>
-                                        <span className={`stamp ${attClass}`} style={{ margin: 0 }}>
-                                          {attStatus}
-                                        </span>
-                                      </div>
-                                      <div className="seat-detail-row"><span>Seat</span><b>{currentSeat.label}</b></div>
-                                      <div className="seat-detail-row"><span>Floor</span><b>{currentSeat.floor || '—'}</b></div>
-                                      <div className="seat-detail-row"><span>Section</span><b>{currentSeat.section || '—'}</b></div>
-                                    </div>
-                                  );
-                                })()
-                            ) : (
-                              <div className="seat-detail">Click any seat to view or assign it</div>
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="empty-state">
-                        <div className="empty-state-icon">🪑</div>
-                        <h3 className="empty-state-title">No Seats Configured</h3>
-                        <p className="empty-state-desc">Create your library seats floor plan to start assigning them to students.</p>
-                        <button className="btn btn-primary" onClick={() => {
-                          setEditingSeatId(null);
-                          setSeatForm({ seatNumber: '', floor: '', section: '' });
-                          setSeatModalOpen(true);
-                        }}>+ Create Seats</button>
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                {/* ================= FEES ================= */}
-                {activeView === 'fees' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Ledger</div>
-                        <h1 className="page-title">Fees</h1>
-                      </div>
-                      <button className="btn btn-primary" onClick={() => setAddFeeOpen(true)}>Create Invoice</button>
-                    </div>
-
-                    <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
-                        <div className="stat-label">Collected this month</div>
-                        <div className="stat-value">₹{feeStats.collectedThisMonth !== undefined ? feeStats.collectedThisMonth : 0}</div>
-                      </div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
-                        <div className="stat-label">Total due</div>
-                        <div className="stat-value">₹{feeStats.totalDue !== undefined ? feeStats.totalDue : 0}</div>
-                      </div>
-                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
-                        <div className="stat-label">Students overdue</div>
-                        <div className="stat-value">{feeStats.studentsOverdue !== undefined ? feeStats.studentsOverdue : 0}</div>
-                      </div>
-                    </div>
-
-                    <div className="toolbar" style={{ marginBottom: '15px' }}>
-                      <div className="filter-chips">
-                        {['all', 'paid', 'due'].map((filter) => (
-                          <div
-                            key={filter}
-                            className={`chip ${feeFilter === filter ? 'active' : ''}`}
-                            onClick={() => setFeeFilter(filter)}
-                          >
-                            {filter.toUpperCase()}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {(() => {
-                      const filteredFees = feeHistoryList;
-
-                      return filteredFees.length > 0 ? (
-                        <div className="panel">
-                          <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
-                          <table className="ledger">
-                            <thead>
-                              <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
-                            </thead>
-                            <tbody>
-                              {filteredFees.map((fee, fIdx) => {
-                                const student = studentsList.find(s => s.id === fee.studentId);
-                                const sName = student ? student.name : 'Unknown Student';
-                                const avatar = sName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                                const isPaid = fee.status === 'PAID';
-                                const formattedDate = isPaid 
-                                  ? (fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—')
-                                  : `Due ${fee.dueDate ? new Date(fee.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}`;
-
-                                return (
-                                  <tr key={fIdx}>
+                            <table className="ledger">
+                              <thead>
+                                <tr><th>Student</th><th>Mobile</th><th>Shift</th><th>Seat</th><th>Joined</th><th>Membership</th><th></th></tr>
+                              </thead>
+                              <tbody>
+                                {filteredStudents.map((s, idx) => (
+                                  <tr key={idx}>
                                     <td className="name-cell">
-                                      <span className="avatar">{avatar}</span>
-                                      <span className="cell-name">{sName}</span>
-                                    </td>
-                                    <td className="cell-amount">₹{fee.amount}</td>
-                                    <td>{fee.paymentMode || '—'}</td>
-                                    <td>{formattedDate}</td>
-                                    <td><span className={`stamp ${isPaid ? 'paid' : 'due'}`}>{isPaid ? 'Paid' : 'Due'}</span></td>
-                                    <td>
-                                      {isPaid ? (
-                                        <span className="panel-link" onClick={() => {
-                                          alert(`RECEIPT\n-----------------\nStudent: ${sName}\nAmount: ₹${fee.amount}\nPaid Amount: ₹${fee.paidAmount}\nMethod: ${fee.paymentMode}\nDate: ${fee.paymentDate}`);
-                                        }} style={{ cursor: 'pointer' }}>Receipt</span>
+                                      {s.profileImage ? (
+                                        <img src={s.profileImage} alt="Avatar" className="avatar" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
                                       ) : (
-                                        <span className="panel-link" onClick={() => {
-                                          setSelectedFeeForPayment(fee);
-                                          setPayNowOpen(true);
-                                        }} style={{ cursor: 'pointer', color: 'var(--terracotta)' }}>Collect</span>
+                                        <span className="avatar">
+                                          {s.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                                        </span>
                                       )}
+                                      <span className="cell-name">{s.name}</span>
                                     </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="empty-state">
-                          <div className="empty-state-icon">💵</div>
-                          <h3 className="empty-state-title">No Invoices Found</h3>
-                          <p className="empty-state-desc">All student fee bills, payment history, and collection receipts will be listed here.</p>
-                          <button className="btn btn-primary" onClick={() => setAddFeeOpen(true)}>Create Invoice</button>
-                        </div>
-                      );
-                    })()}
-                  </section>
-                )}
-
-                {/* ================= ATTENDANCE ================= */}
-                {activeView === 'attendance' && (() => {
-                  const dailyAttendanceRecords = studentsList.map(student => {
-                    const att = attendanceList.find(a => a.studentId === student.id);
-                    return {
-                      ...student,
-                      attendanceRecord: att,
-                    };
-                  });
-                  
-                  const filteredDailyAttendance = dailyAttendanceRecords.filter(r => 
-                    r.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
-                    (r.seat && r.seat.toLowerCase().includes(attendanceSearch.toLowerCase()))
-                  );
-
-                  return (
-                    <section className="view active">
-                      <div className="topbar">
-                        <div>
-                          <div className="page-eyebrow">Today · {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
-                          <h1 className="page-title">Attendance</h1>
-                        </div>
-                        <div className="topbar-actions">
-                          <div className="search">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-                            <input placeholder="Search by name or seat" value={attendanceSearch} onChange={(e) => setAttendanceSearch(e.target.value)} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
-                        <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}><div className="stat-label">Checked in</div><div className="stat-value">{attendanceStats.checkedIn}</div></div>
-                        <div className="stat-card" style={{ '--stat-color': 'var(--muted)' }}><div className="stat-label">Checked out</div><div className="stat-value">{attendanceStats.checkedOut}</div></div>
-                        <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{attendanceStats.notYetArrived}</div></div>
-                      </div>
-
-                      {filteredDailyAttendance.length > 0 ? (
-                        <div className="panel">
-                          <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
-                          <table className="ledger">
-                            <thead>
-                              <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th><th>Actions</th></tr>
-                            </thead>
-                            <tbody>
-                              {filteredDailyAttendance.map((r, rIdx) => {
-                                const att = r.attendanceRecord;
-                                const isAbsent = att && att.status === 'ABSENT';
-                                return (
-                                  <tr key={rIdx}>
-                                    <td className="cell-name">{r.name}</td>
-                                    <td>{r.seat || '—'}</td>
-                                    <td className="mono">{att && att.checkIn ? att.checkIn : '—'}</td>
-                                    <td className="mono">{att && att.checkOut ? att.checkOut : '—'}</td>
+                                    <td className="mono">{s.mobile}</td>
+                                    <td>{s.shift}</td>
+                                    <td>{s.seat}</td>
+                                    <td>{s.joined}</td>
                                     <td>
-                                      <span className={`stamp ${isAbsent ? 'due' : (!att ? 'due' : (att.checkOut ? 'inactive' : 'active'))}`}>
-                                        {isAbsent ? 'Absent' : (!att ? 'Not Arrived' : (att.checkOut ? 'Left' : 'Present'))}
+                                      <span className={`pill ${s.status}`}>
+                                        {s.status === 'active' ? 'Active' : 'Inactive'}
                                       </span>
                                     </td>
                                     <td>
-                                      {!att && (
-                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--teal)' }} onClick={() => {
-                                            api.attendanceApi.checkIn({ studentId: r.id })
-                                              .then(res => {
-                                                if (res.success || res.status === 'success') {
-                                                  showToast(`${r.name} checked in successfully`);
-                                                  fetchAttendanceData();
-                                                } else {
-                                                  alert(res.message);
-                                                }
-                                              })
-                                              .catch(console.error);
-                                          }}>Check In</button>
-                                        </div>
-                                      )}
-                                      {att && !isAbsent && !att.checkOut && (
-                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--terracotta)' }} onClick={() => {
-                                            api.attendanceApi.checkOut(r.id)
-                                              .then(res => {
-                                                if (res.success || res.status === 'success') {
-                                                  showToast(`${r.name} checked out successfully`);
-                                                  fetchAttendanceData();
-                                                } else {
-                                                  alert(res.message);
-                                                }
-                                              })
-                                              .catch(console.error);
-                                          }}>Check Out</button>
-                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset' }} onClick={() => {
-                                            setEditingAttendance(att);
-                                            setAttendanceForm({
-                                              status: att.status,
-                                              checkIn: att.checkIn ? att.checkIn.substring(0, 5) : '',
-                                              checkOut: att.checkOut ? att.checkOut.substring(0, 5) : ''
-                                            });
-                                            setEditAttendanceOpen(true);
-                                          }}>Edit</button>
-                                        </div>
-                                      )}
-                                      {att && (isAbsent || att.checkOut) && (
-                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                          <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
-                                            {isAbsent ? 'Absent' : 'Completed'}
-                                          </span>
-                                          <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset' }} onClick={() => {
-                                            setEditingAttendance(att);
-                                            setAttendanceForm({
-                                              status: att.status,
-                                              checkIn: att.checkIn ? att.checkIn.substring(0, 5) : '',
-                                              checkOut: att.checkOut ? att.checkOut.substring(0, 5) : ''
-                                            });
-                                            setEditAttendanceOpen(true);
-                                          }}>Edit</button>
-                                        </div>
-                                      )}
+                                      <span
+                                        className="panel-link"
+                                        onClick={() => {
+                                          setSelectedStudent(s);
+                                          setViewStudentOpen(true);
+                                        }}
+                                      >
+                                        View
+                                      </span>
                                     </td>
                                   </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="note">
+                            Showing <span>{filteredStudents.length}</span> of {studentsList.length} students. Search narrows the list instantly — try “rohit” or “98”.
+                          </div>
+                        </>
                       ) : (
                         <div className="empty-state">
-                          <div className="empty-state-icon">📋</div>
-                          <h3 className="empty-state-title">{attendanceSearch ? "No Search Results" : "No Registered Students"}</h3>
+                          <div className="empty-state-icon">👤</div>
+                          <h3 className="empty-state-title">{studentSearch ? "No Search Results" : "No Students Registered"}</h3>
                           <p className="empty-state-desc">
-                            {attendanceSearch ? `No students match "${attendanceSearch}".` : "Daily attendance list will appear once you register students."}
+                            {studentSearch ? `No registered students match "${studentSearch}".` : "Get started by registering your first student into your library ledger."}
                           </p>
-                          {attendanceSearch ? (
-                            <button className="btn btn-ghost" onClick={() => setAttendanceSearch('')}>Clear Search</button>
+                          {studentSearch ? (
+                            <button className="btn btn-ghost" onClick={() => setStudentSearch('')}>Clear Search</button>
                           ) : (
-                            <button className="btn btn-primary" onClick={() => { setActiveView('students'); setAddStudentOpen(true); }}>+ Register Student</button>
+                            <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
                           )}
                         </div>
                       )}
                     </section>
-                  );
-                })()}
+                  )}
 
-                {/* ================= REPORTS ================= */}
-                {activeView === 'reports' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Export</div>
-                        <h1 className="page-title">Reports</h1>
-                      </div>
-                    </div>
-
-                    <div className="report-grid">
-                      <div className="report-card">
-                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
-                        <div className="report-name">Active students</div>
-                        <div className="report-desc">Full roster of currently active members with seat and shift.</div>
-                        <div className="report-actions">
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('active-students', 'excel')}>Excel</button>
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('active-students', 'pdf')}>PDF</button>
-                        </div>
-                      </div>
-                      <div className="report-card">
-                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg></div>
-                        <div className="report-name">Vacant seats</div>
-                        <div className="report-desc">Available seats by shift, updated in real time.</div>
-                        <div className="report-actions">
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('vacant-seats', 'excel')}>Excel</button>
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('vacant-seats', 'pdf')}>PDF</button>
-                        </div>
-                      </div>
-                      <div className="report-card">
-                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
-                        <div className="report-name">Fee collection</div>
-                        <div className="report-desc">All payments recorded this month, grouped by method.</div>
-                        <div className="report-actions">
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('fee-collection', 'excel')}>Excel</button>
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('fee-collection', 'pdf')}>PDF</button>
-                        </div>
-                      </div>
-                      <div className="report-card">
-                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg></div>
-                        <div className="report-name">Pending fees</div>
-                        <div className="report-desc">Students with fees overdue, sorted by days pending.</div>
-                        <div className="report-actions">
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('pending-fees', 'excel')}>Excel</button>
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('pending-fees', 'pdf')}>PDF</button>
-                        </div>
-                      </div>
-                      <div className="report-card">
-                        <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 13l4-4 3 3 5-6" /></svg></div>
-                        <div className="report-name">Attendance log</div>
-                        <div className="report-desc">Daily check-in logs and check-out status.</div>
-                        <div className="report-actions">
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('attendance-log', 'excel')}>Excel</button>
-                          <button className="btn btn-ghost" onClick={() => handleExportReport('attendance-log', 'pdf')}>PDF</button>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {/* ================= SETTINGS ================= */}
-                {activeView === 'settings' && (
-                  <section className="view active">
-                    <div className="topbar">
-                      <div>
-                        <div className="page-eyebrow">Configuration</div>
-                        <h1 className="page-title">Settings</h1>
-                      </div>
-                    </div>
-
-                    {/* Subscription Status Card */}
-                    <div className="panel" style={{ marginBottom: '24px', padding: '24px' }}>
-                      <div className="panel-head" style={{ marginBottom: '16px' }}>
-                        <h3 className="panel-title">Current Subscription</h3>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                  {/* ================= SEATS ================= */}
+                  {activeView === 'seats' && (
+                    <section className="view active">
+                      <div className="topbar">
                         <div>
-                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--ink)' }}>
-                            {settingsData.planName || 'Free Trial'} Plan
-                            <span className="badge" style={{
-                              marginLeft: '12px',
-                              background: settingsData.planStatus === 'ACTIVE' ? 'var(--teal-tint)' : 'var(--mustard-tint)',
-                              color: settingsData.planStatus === 'ACTIVE' ? 'var(--teal)' : 'var(--mustard)',
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: '600'
-                            }}>
-                              {settingsData.planStatus || 'TRIAL'}
-                            </span>
+                          <div className="page-eyebrow">Floor plan</div>
+                          <h1 className="page-title">Seats</h1>
+                        </div>
+                        <div className="topbar-actions">
+                          <button className="btn btn-ghost" onClick={() => {
+                            setEditingSeatId(null);
+                            setSeatForm({ seatNumber: '', floor: '', section: '' });
+                            setSeatModalOpen(true);
+                          }}>+ Create Seats</button>
+                        </div>
+                      </div>
+
+                      {fullSeats.length > 0 ? (() => {
+                        const displaySeats = getDisplaySeats();
+                        const currentSeat = selectedSeatIndex !== null ? displaySeats[selectedSeatIndex] : null;
+                        return (
+                          <>
+                            <div className="toolbar">
+                              <div className="filter-chips">
+                                {getParsedShiftsList().map((chip) => (
+                                  <div
+                                    key={chip}
+                                    className={`chip ${seatFilter === chip ? 'active' : ''}`}
+                                    onClick={() => setSeatFilter(chip)}
+                                  >
+                                    {chip}
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="seat-legend" style={{ margin: 0 }}>
+                                <span><i className="legend-chip" style={{ background: 'var(--sage-tint)', border: '1px solid #C9D7BE' }}></i>Available</span>
+                                <span><i className="legend-chip" style={{ background: 'var(--teal-tint)', border: '1px solid #BFD4CC' }}></i>Occupied</span>
+                                <span><i className="legend-chip" style={{ background: 'var(--terracotta-tint)', border: '1px solid #E3BBAC' }}></i>Fee due</span>
+                              </div>
+                            </div>
+
+                            <div className="grid-2" style={{ gridTemplateColumns: '1.7fr 1fr' }}>
+                              <div className="panel">
+                                <div className="seat-grid-github">
+                                  {displaySeats.map((s, idx) => (
+                                    <div
+                                      key={idx}
+                                      className={`seat-github ${s.status} ${selectedSeatIndex === idx ? 'selected' : ''}`}
+                                      title={s.student ? `${s.student} — ${s.status}` : 'Available'}
+                                      onClick={() => setSelectedSeatIndex(idx)}
+                                    >
+                                      {s.label}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="panel seat-side">
+                                <div className="panel-head"><h3 className="panel-title">Seat detail</h3></div>
+                                {selectedSeatIndex !== null && currentSeat ? (
+                                  currentSeat.status === 'uncreated' ? (
+                                    <div className="seat-detail">
+                                      This seat slot has not been created yet.<br /><br />
+                                      <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => {
+                                        setEditingSeatId(null);
+
+                                        const nextSeatNum = (() => {
+                                          const activeCount = fullSeats.filter(s => s.status !== 'uncreated').length;
+                                          const row = String.fromCharCode(65 + Math.floor(activeCount / 12));
+                                          return row + String(activeCount % 12 + 1).padStart(2, '0');
+                                        })();
+
+                                        setSeatForm({
+                                          seatNumber: nextSeatNum,
+                                          floor: 'Floor 1',
+                                          section: 'General'
+                                        });
+                                        setSeatModalOpen(true);
+                                      }}>+ Create Seat</button>
+                                    </div>
+                                  ) : currentSeat.status === 'available' ? (
+                                    <div className="seat-detail">
+                                      Seat <b>{currentSeat.label}</b> is available.<br /><br />
+                                      <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setAddStudentOpen(true)}>Assign this seat</button>
+                                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                        <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => {
+                                          setEditingSeatId(currentSeat.id);
+                                          setSeatForm({
+                                            seatNumber: currentSeat.label,
+                                            floor: currentSeat.floor || '',
+                                            section: currentSeat.section || ''
+                                          });
+                                          setSeatModalOpen(true);
+                                        }}>Edit</button>
+                                        <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', color: 'var(--terracotta)' }} onClick={() => {
+                                          if (confirm('Are you sure you want to delete this seat?')) {
+                                            api.seatApi.delete(currentSeat.id)
+                                              .then(res => {
+                                                if (res.success || res.status === 'success') {
+                                                  showToast('Seat deleted');
+                                                  setSelectedSeatIndex(null);
+                                                  fetchSeats();
+                                                } else {
+                                                  alert(res.message || "Failed to delete seat.");
+                                                }
+                                              });
+                                          }
+                                        }}>Delete</button>
+                                      </div>
+                                    </div>
+                                  ) : (() => {
+                                    const targetStudents = studentsList.filter(st => {
+                                      if (st.seat !== currentSeat.label) return false;
+                                      if (seatFilter === 'All shifts') return true;
+
+                                      const lowerFilter = seatFilter.toLowerCase();
+                                      const stShift = (st.shift || '').toLowerCase().replace('_', ' ');
+                                      if (lowerFilter.includes('morning')) return stShift === 'morning';
+                                      if (lowerFilter.includes('evening')) return stShift === 'evening';
+                                      if (lowerFilter.includes('full')) return stShift === 'full day';
+                                      return true;
+                                    });
+
+                                    return (
+                                      <div className="seat-detail filled" style={{ padding: '16px 12px' }}>
+                                        <div className="seat-detail-row" style={{ marginBottom: '12px' }}>
+                                          <span>Seat</span><b>{currentSeat.label}</b>
+                                        </div>
+
+                                        {targetStudents.map((st, sidx) => {
+                                          const todayRecord = attendanceList.find(a => a.studentId === st.id);
+                                          const attStatus = todayRecord ? (todayRecord.status === 'ABSENT' ? 'Absent' : todayRecord.checkOut ? 'Left' : 'Checked In') : 'Absent';
+                                          const attClass = todayRecord ? (todayRecord.status === 'ABSENT' ? 'due' : todayRecord.checkOut ? 'inactive' : 'active') : 'due';
+
+                                          const shiftDisp = (st.shift || '').toLowerCase().includes('morning') ? 'Morning' : (st.shift || '').toLowerCase().includes('evening') ? 'Evening' : 'Full Day';
+
+                                          return (
+                                            <div key={st.id} style={{
+                                              paddingTop: sidx > 0 ? '12px' : '0',
+                                              borderTop: sidx > 0 ? '1px dashed var(--rule)' : 'none',
+                                              marginTop: sidx > 0 ? '12px' : '0'
+                                            }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                  {shiftDisp} Shift
+                                                </span>
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                  <span className={`stamp ${st.status === 'due' ? 'due' : 'paid'}`} style={{ margin: 0, padding: '2px 6px', fontSize: '9px' }}>
+                                                    {st.status === 'due' ? 'Due' : 'Paid'}
+                                                  </span>
+                                                  <span className={`stamp ${attClass}`} style={{ margin: 0, padding: '2px 6px', fontSize: '9px' }}>
+                                                    {attStatus}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <div className="seat-detail-name" style={{ margin: '6px 0 2px 0', fontSize: '14px' }}>{st.name}</div>
+                                              <div style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'monospace' }}>{st.mobile}</div>
+                                            </div>
+                                          );
+                                        })}
+
+                                        <div style={{ height: '1px', backgroundColor: 'var(--rule)', margin: '14px 0 10px 0' }} />
+                                        <div className="seat-detail-row"><span>Floor</span><b>{currentSeat.floor || '—'}</b></div>
+                                        <div className="seat-detail-row"><span>Section</span><b>{currentSeat.section || '—'}</b></div>
+                                      </div>
+                                    );
+                                  })()
+                                ) : (
+                                  <div className="seat-detail">Click any seat to view or assign it</div>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })() : (
+                        <div className="empty-state">
+                          <div className="empty-state-icon">🪑</div>
+                          <h3 className="empty-state-title">No Seats Configured</h3>
+                          <p className="empty-state-desc">Create your library seats floor plan to start assigning them to students.</p>
+                          <button className="btn btn-primary" onClick={() => {
+                            setEditingSeatId(null);
+                            setSeatForm({ seatNumber: '', floor: '', section: '' });
+                            setSeatModalOpen(true);
+                          }}>+ Create Seats</button>
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* ================= FEES ================= */}
+                  {activeView === 'fees' && (
+                    <section className="view active">
+                      <div className="topbar">
+                        <div>
+                          <div className="page-eyebrow">Ledger</div>
+                          <h1 className="page-title">Fees</h1>
+                        </div>
+                        <button className="btn btn-primary" onClick={() => setAddFeeOpen(true)}>Create Invoice</button>
+                      </div>
+
+                      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
+                          <div className="stat-label">Collected this month</div>
+                          <div className="stat-value">₹{feeStats.collectedThisMonth !== undefined ? feeStats.collectedThisMonth : 0}</div>
+                        </div>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--terracotta)' }}>
+                          <div className="stat-label">Total due</div>
+                          <div className="stat-value">₹{feeStats.totalDue !== undefined ? feeStats.totalDue : 0}</div>
+                        </div>
+                        <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
+                          <div className="stat-label">Students overdue</div>
+                          <div className="stat-value">{feeStats.studentsOverdue !== undefined ? feeStats.studentsOverdue : 0}</div>
+                        </div>
+                      </div>
+
+                      <div className="toolbar" style={{ marginBottom: '15px' }}>
+                        <div className="filter-chips">
+                          {['all', 'paid', 'due'].map((filter) => (
+                            <div
+                              key={filter}
+                              className={`chip ${feeFilter === filter ? 'active' : ''}`}
+                              onClick={() => setFeeFilter(filter)}
+                            >
+                              {filter.toUpperCase()}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const filteredFees = feeHistoryList;
+
+                        return filteredFees.length > 0 ? (
+                          <div className="panel">
+                            <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
+                            <table className="ledger">
+                              <thead>
+                                <tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
+                              </thead>
+                              <tbody>
+                                {filteredFees.map((fee, fIdx) => {
+                                  const student = studentsList.find(s => s.id === fee.studentId);
+                                  const sName = student ? student.name : 'Unknown Student';
+                                  const avatar = sName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+                                  const isPaid = fee.status === 'PAID';
+                                  const formattedDate = isPaid
+                                    ? (fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—')
+                                    : `Due ${fee.dueDate ? new Date(fee.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}`;
+
+                                  return (
+                                    <tr key={fIdx}>
+                                      <td className="name-cell">
+                                        <span className="avatar">{avatar}</span>
+                                        <span className="cell-name">{sName}</span>
+                                      </td>
+                                      <td className="cell-amount">₹{fee.amount}</td>
+                                      <td>{fee.paymentMode || '—'}</td>
+                                      <td>{formattedDate}</td>
+                                      <td><span className={`stamp ${isPaid ? 'paid' : 'due'}`}>{isPaid ? 'Paid' : 'Due'}</span></td>
+                                      <td>
+                                        {isPaid ? (
+                                          <span className="panel-link" onClick={() => {
+                                            alert(`RECEIPT\n-----------------\nStudent: ${sName}\nAmount: ₹${fee.amount}\nPaid Amount: ₹${fee.paidAmount}\nMethod: ${fee.paymentMode}\nDate: ${fee.paymentDate}`);
+                                          }} style={{ cursor: 'pointer' }}>Receipt</span>
+                                        ) : (
+                                          <span className="panel-link" onClick={() => {
+                                            setSelectedFeeForPayment(fee);
+                                            setPayNowOpen(true);
+                                          }} style={{ cursor: 'pointer', color: 'var(--terracotta)' }}>Collect</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
-                          <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
-                            {settingsData.planStatus === 'EXPIRED' ? 'Subscription expired on' : 'Plan renews/expires on'}: <strong>{settingsData.endDate || 'N/A'}</strong>
+                        ) : (
+                          <div className="empty-state">
+                            <div className="empty-state-icon">💵</div>
+                            <h3 className="empty-state-title">No Invoices Found</h3>
+                            <p className="empty-state-desc">All student fee bills, payment history, and collection receipts will be listed here.</p>
+                            <button className="btn btn-primary" onClick={() => setAddFeeOpen(true)}>Create Invoice</button>
+                          </div>
+                        );
+                      })()}
+                    </section>
+                  )}
+
+                  {/* ================= ATTENDANCE ================= */}
+                  {activeView === 'attendance' && (() => {
+                    const dailyAttendanceRecords = studentsList.map(student => {
+                      const att = attendanceList.find(a => a.studentId === student.id);
+                      return {
+                        ...student,
+                        attendanceRecord: att,
+                      };
+                    });
+
+                    const filteredDailyAttendance = dailyAttendanceRecords.filter(r =>
+                      r.name.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+                      (r.seat && r.seat.toLowerCase().includes(attendanceSearch.toLowerCase()))
+                    );
+
+                    return (
+                      <section className="view active">
+                        <div className="topbar">
+                          <div>
+                            <div className="page-eyebrow">Today · {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
+                            <h1 className="page-title">Attendance</h1>
+                          </div>
+                          <div className="topbar-actions">
+                            <div className="search">
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+                              <input placeholder="Search by name or seat" value={attendanceSearch} onChange={(e) => setAttendanceSearch(e.target.value)} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: '20px' }}>
+                          <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}><div className="stat-label">Checked in</div><div className="stat-value">{attendanceStats.checkedIn}</div></div>
+                          <div className="stat-card" style={{ '--stat-color': 'var(--muted)' }}><div className="stat-label">Checked out</div><div className="stat-value">{attendanceStats.checkedOut}</div></div>
+                          <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}><div className="stat-label">Not yet arrived</div><div className="stat-value">{attendanceStats.notYetArrived}</div></div>
+                        </div>
+
+                        {filteredDailyAttendance.length > 0 ? (
+                          <div className="panel">
+                            <div className="panel-head"><h3 className="panel-title">Daily attendance list</h3></div>
+                            <table className="ledger">
+                              <thead>
+                                <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Status</th><th>Actions</th></tr>
+                              </thead>
+                              <tbody>
+                                {filteredDailyAttendance.map((r, rIdx) => {
+                                  const att = r.attendanceRecord;
+                                  const isAbsent = att && att.status === 'ABSENT';
+                                  return (
+                                    <tr key={rIdx}>
+                                      <td className="cell-name">{r.name}</td>
+                                      <td>{r.seat || '—'}</td>
+                                      <td className="mono">{att && att.checkIn ? att.checkIn : '—'}</td>
+                                      <td className="mono">{att && att.checkOut ? att.checkOut : '—'}</td>
+                                      <td>
+                                        <span className={`stamp ${isAbsent ? 'due' : (!att ? 'due' : (att.checkOut ? 'inactive' : 'active'))}`}>
+                                          {isAbsent ? 'Absent' : (!att ? 'Not Arrived' : (att.checkOut ? 'Left' : 'Present'))}
+                                        </span>
+                                      </td>
+                                      <td>
+                                        {!att && (
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                            <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--teal)' }} onClick={() => {
+                                              api.attendanceApi.checkIn({ studentId: r.id })
+                                                .then(res => {
+                                                  if (res.success || res.status === 'success') {
+                                                    showToast(`${r.name} checked in successfully`);
+                                                    fetchAttendanceData();
+                                                  } else {
+                                                    alert(res.message);
+                                                  }
+                                                })
+                                                .catch(console.error);
+                                            }}>Check In</button>
+                                          </div>
+                                        )}
+                                        {att && !isAbsent && !att.checkOut && (
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                            <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset', color: 'var(--terracotta)' }} onClick={() => {
+                                              api.attendanceApi.checkOut(r.id)
+                                                .then(res => {
+                                                  if (res.success || res.status === 'success') {
+                                                    showToast(`${r.name} checked out successfully`);
+                                                    fetchAttendanceData();
+                                                  } else {
+                                                    alert(res.message);
+                                                  }
+                                                })
+                                                .catch(console.error);
+                                            }}>Check Out</button>
+                                            <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset' }} onClick={() => {
+                                              setEditingAttendance(att);
+                                              setAttendanceForm({
+                                                status: att.status,
+                                                checkIn: att.checkIn ? att.checkIn.substring(0, 5) : '',
+                                                checkOut: att.checkOut ? att.checkOut.substring(0, 5) : ''
+                                              });
+                                              setEditAttendanceOpen(true);
+                                            }}>Edit</button>
+                                          </div>
+                                        )}
+                                        {att && (isAbsent || att.checkOut) && (
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                            <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                                              {isAbsent ? 'Absent' : 'Completed'}
+                                            </span>
+                                            <button className="btn btn-ghost" style={{ padding: '4px 8px', minHeight: 'unset' }} onClick={() => {
+                                              setEditingAttendance(att);
+                                              setAttendanceForm({
+                                                status: att.status,
+                                                checkIn: att.checkIn ? att.checkIn.substring(0, 5) : '',
+                                                checkOut: att.checkOut ? att.checkOut.substring(0, 5) : ''
+                                              });
+                                              setEditAttendanceOpen(true);
+                                            }}>Edit</button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="empty-state">
+                            <div className="empty-state-icon">📋</div>
+                            <h3 className="empty-state-title">{attendanceSearch ? "No Search Results" : "No Registered Students"}</h3>
+                            <p className="empty-state-desc">
+                              {attendanceSearch ? `No students match "${attendanceSearch}".` : "Daily attendance list will appear once you register students."}
+                            </p>
+                            {attendanceSearch ? (
+                              <button className="btn btn-ghost" onClick={() => setAttendanceSearch('')}>Clear Search</button>
+                            ) : (
+                              <button className="btn btn-primary" onClick={() => { setActiveView('students'); setAddStudentOpen(true); }}>+ Register Student</button>
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
+                  {/* ================= REPORTS ================= */}
+                  {activeView === 'reports' && (
+                    <section className="view active">
+                      <div className="topbar">
+                        <div>
+                          <div className="page-eyebrow">Export</div>
+                          <h1 className="page-title">Reports</h1>
+                        </div>
+                      </div>
+
+                      <div className="report-grid">
+                        <div className="report-card">
+                          <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+                          <div className="report-name">Active students</div>
+                          <div className="report-desc">Full roster of currently active members with seat and shift.</div>
+                          <div className="report-actions">
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('active-students', 'excel')}>Excel</button>
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('active-students', 'pdf')}>PDF</button>
+                          </div>
+                        </div>
+                        <div className="report-card">
+                          <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg></div>
+                          <div className="report-name">Vacant seats</div>
+                          <div className="report-desc">Available seats by shift, updated in real time.</div>
+                          <div className="report-actions">
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('vacant-seats', 'excel')}>Excel</button>
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('vacant-seats', 'pdf')}>PDF</button>
+                          </div>
+                        </div>
+                        <div className="report-card">
+                          <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></div>
+                          <div className="report-name">Fee collection</div>
+                          <div className="report-desc">All payments recorded this month, grouped by method.</div>
+                          <div className="report-actions">
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('fee-collection', 'excel')}>Excel</button>
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('fee-collection', 'pdf')}>PDF</button>
+                          </div>
+                        </div>
+                        <div className="report-card">
+                          <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg></div>
+                          <div className="report-name">Pending fees</div>
+                          <div className="report-desc">Students with fees overdue, sorted by days pending.</div>
+                          <div className="report-actions">
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('pending-fees', 'excel')}>Excel</button>
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('pending-fees', 'pdf')}>PDF</button>
+                          </div>
+                        </div>
+                        <div className="report-card">
+                          <div className="report-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 13l4-4 3 3 5-6" /></svg></div>
+                          <div className="report-name">Attendance log</div>
+                          <div className="report-desc">Daily check-in logs and check-out status.</div>
+                          <div className="report-actions">
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('attendance-log', 'excel')}>Excel</button>
+                            <button className="btn btn-ghost" onClick={() => handleExportReport('attendance-log', 'pdf')}>PDF</button>
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </section>
+                  )}
 
-                    {/* Library details settings form */}
-                    <div className="panel" style={{ padding: '24px' }}>
-                      <div className="panel-head" style={{ marginBottom: '16px' }}><h3 className="panel-title">Library Details</h3></div>
-                      <form onSubmit={handleUpdateSettings}>
-                        <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                          <div className="field span-2">
-                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Library Name</label>
-                            <input
-                              type="text"
-                              value={settingsData.libraryName || ''}
-                              onChange={(e) => setSettingsData({ ...settingsData, libraryName: e.target.value })}
-                              required
-                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
-                            />
-                          </div>
+                  {/* ================= SETTINGS ================= */}
+                  {activeView === 'settings' && (
+                    <section className="view active">
+                      <div className="topbar">
+                        <div>
+                          <div className="page-eyebrow">Configuration</div>
+                          <h1 className="page-title">Settings</h1>
+                        </div>
+                      </div>
 
-                          <div className="field">
-                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>City</label>
-                            <input
-                              type="text"
-                              value={settingsData.city || ''}
-                              onChange={(e) => setSettingsData({ ...settingsData, city: e.target.value })}
-                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
-                            />
-                          </div>
-
-                          <div className="field">
-                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>State</label>
-                            <input
-                              type="text"
-                              value={settingsData.state || ''}
-                              onChange={(e) => setSettingsData({ ...settingsData, state: e.target.value })}
-                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
-                            />
-                          </div>
-
-                          <div className="field span-2">
-                            <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Full Address</label>
-                            <textarea
-                              rows="3"
-                              value={settingsData.address || ''}
-                              onChange={(e) => setSettingsData({ ...settingsData, address: e.target.value })}
-                              style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
-                            ></textarea>
+                      {/* Subscription Status Card */}
+                      <div className="panel" style={{ marginBottom: '24px', padding: '24px' }}>
+                        <div className="panel-head" style={{ marginBottom: '16px' }}>
+                          <h3 className="panel-title">Current Subscription</h3>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                          <div>
+                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--ink)' }}>
+                              {settingsData.planName || 'Free Trial'} Plan
+                              <span className="badge" style={{
+                                marginLeft: '12px',
+                                background: settingsData.planStatus === 'ACTIVE' ? 'var(--teal-tint)' : 'var(--mustard-tint)',
+                                color: settingsData.planStatus === 'ACTIVE' ? 'var(--teal)' : 'var(--mustard)',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '600'
+                              }}>
+                                {settingsData.planStatus || 'TRIAL'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
+                              {settingsData.planStatus === 'EXPIRED' ? 'Subscription expired on' : 'Plan renews/expires on'}: <strong>{settingsData.endDate || 'N/A'}</strong>
+                            </div>
                           </div>
                         </div>
+                      </div>
 
-                        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-                          <button
-                            type="submit"
-                            className="btn btn-primary"
-                            disabled={settingsLoading}
-                          >
-                            {settingsLoading ? 'Saving...' : 'Save Settings'}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </section>
-                )}
-              </React.Fragment>
-            )}
+                      {/* Library details settings form */}
+                      <div className="panel" style={{ padding: '24px' }}>
+                        <div className="panel-head" style={{ marginBottom: '16px' }}><h3 className="panel-title">Library Details</h3></div>
+                        <form onSubmit={handleUpdateSettings}>
+                          <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                            <div className="field span-2">
+                              <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Library Name</label>
+                              <input
+                                type="text"
+                                value={settingsData.libraryName || ''}
+                                onChange={(e) => setSettingsData({ ...settingsData, libraryName: e.target.value })}
+                                required
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                              />
+                            </div>
 
-          </main>
+                            <div className="field">
+                              <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>City</label>
+                              <input
+                                type="text"
+                                value={settingsData.city || ''}
+                                onChange={(e) => setSettingsData({ ...settingsData, city: e.target.value })}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                              />
+                            </div>
+
+                            <div className="field">
+                              <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>State</label>
+                              <input
+                                type="text"
+                                value={settingsData.state || ''}
+                                onChange={(e) => setSettingsData({ ...settingsData, state: e.target.value })}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                              />
+                            </div>
+
+                            <div className="field span-2">
+                              <label style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Full Address</label>
+                              <textarea
+                                rows="3"
+                                value={settingsData.address || ''}
+                                onChange={(e) => setSettingsData({ ...settingsData, address: e.target.value })}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--rule)', background: 'var(--card)' }}
+                              ></textarea>
+                            </div>
+                          </div>
+
+                          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              type="submit"
+                              className="btn btn-primary"
+                              disabled={settingsLoading}
+                            >
+                              {settingsLoading ? 'Saving...' : 'Save Settings'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </section>
+                  )}
+                </React.Fragment>
+              )}
+
+            </main>
           </div>
         } />
 
         <Route path="/student" element={
           <div className="student-shell">
-          <header className="student-header">
-            <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
-              <div className="brand-mark">S</div>
-              <div>
-                <div className="brand-name" style={{ color: 'var(--ink)' }}>StudySpace</div>
-                <div className="brand-sub" style={{ color: 'var(--muted)' }}>Sunrise Reading Room</div>
+            <header className="student-header">
+              <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
+                <div className="brand-mark">S</div>
+                <div>
+                  <div className="brand-name" style={{ color: 'var(--ink)' }}>StudySpace</div>
+                  <div className="brand-sub" style={{ color: 'var(--muted)' }}>Sunrise Reading Room</div>
+                </div>
               </div>
-            </div>
-            <div className="student-header-right">
-              <div className="student-avatar-name" onClick={() => setStudentProfileOpen(true)} style={{ cursor: 'pointer' }}>
-                {studentDashboardData?.profileImage ? (
-                  <img src={studentDashboardData.profileImage} alt="Profile" className="avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
-                ) : (
-                  <span className="avatar">
-                    {studentDashboardData?.studentName ? studentDashboardData.studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'ST'}
-                  </span>
-                )}
-                <span>{studentDashboardData?.studentName || 'Student'}</span>
+              <div className="student-header-right">
+                <div className="student-avatar-name" onClick={() => setStudentProfileOpen(true)} style={{ cursor: 'pointer' }}>
+                  {studentDashboardData?.profileImage ? (
+                    <img src={studentDashboardData.profileImage} alt="Profile" className="avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    <span className="avatar">
+                      {studentDashboardData?.studentName ? studentDashboardData.studentName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'ST'}
+                    </span>
+                  )}
+                  <span>{studentDashboardData?.studentName || 'Student'}</span>
+                </div>
+                <button className="btn btn-ghost" onClick={handleStudentLogout}>Log out</button>
               </div>
-              <button className="btn btn-ghost" onClick={handleStudentLogout}>Log out</button>
-            </div>
-          </header>
+            </header>
 
-          <nav className="student-tabs">
-            <div className={`student-tab ${studentView === 'overview' ? 'active' : ''}`} onClick={() => setStudentView('overview')}>Overview</div>
-            <div className={`student-tab ${studentView === 'payments' ? 'active' : ''}`} onClick={() => setStudentView('payments')}>Payments</div>
-            <div className={`student-tab ${studentView === 'attendance' ? 'active' : ''}`} onClick={() => setStudentView('attendance')}>Attendance</div>
-          </nav>
+            <nav className="student-tabs">
+              <div className={`student-tab ${studentView === 'overview' ? 'active' : ''}`} onClick={() => setStudentView('overview')}>Overview</div>
+              <div className={`student-tab ${studentView === 'payments' ? 'active' : ''}`} onClick={() => setStudentView('payments')}>Payments</div>
+              <div className={`student-tab ${studentView === 'attendance' ? 'active' : ''}`} onClick={() => setStudentView('attendance')}>Attendance</div>
+            </nav>
 
-          <main className="student-content">
-            {/* ================= STUDENT: OVERVIEW ================= */}
-            {studentView === 'overview' && (() => {
-              const data = studentDashboardData || {};
-              const stFeeDue = data.feeDue !== undefined ? data.feeDue : 0;
-              const hasNoDue = stFeeDue <= 0;
-              return (
-                <section className="sview active">
-                  <div className="page-eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-                  <h1 className="page-title" style={{ marginBottom: '22px' }}>Hi, {data.studentName || 'Student'}</h1>
+            <main className="student-content">
+              {/* ================= STUDENT: OVERVIEW ================= */}
+              {studentView === 'overview' && (() => {
+                const data = studentDashboardData || {};
+                const stFeeDue = data.feeDue !== undefined ? data.feeDue : 0;
+                const hasNoDue = stFeeDue <= 0;
+                return (
+                  <section className="sview active">
+                    <div className="page-eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                    <h1 className="page-title" style={{ marginBottom: '22px' }}>Hi, {data.studentName || 'Student'}</h1>
 
-                  <div className={`sub-card ${hasNoDue ? 'paid' : ''}`}>
-                    <div className="sub-card-top">
-                      <div>
-                        <div className="sub-card-label">This month's subscription</div>
-                        <div className="sub-card-amount">₹{hasNoDue ? 800 : stFeeDue}</div>
-                        <div className="sub-card-due">
-                          {hasNoDue ? 'Paid for this month ✓' : <span>Due amount is pending</span>}
+                    <div className={`sub-card ${hasNoDue ? 'paid' : ''}`}>
+                      <div className="sub-card-top">
+                        <div>
+                          <div className="sub-card-label">This month's subscription</div>
+                          <div className="sub-card-amount">₹{hasNoDue ? 800 : stFeeDue}</div>
+                          <div className="sub-card-due">
+                            {hasNoDue ? 'Paid for this month ✓' : <span>Due amount is pending</span>}
+                          </div>
                         </div>
+                        <span className={`stamp ${hasNoDue ? 'paid' : 'due'}`}>{hasNoDue ? 'Paid' : 'Due'}</span>
                       </div>
-                      <span className={`stamp ${hasNoDue ? 'paid' : 'due'}`}>{hasNoDue ? 'Paid' : 'Due'}</span>
+                      {!hasNoDue && (
+                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }} onClick={() => {
+                          setSelectedFeeForPayment({
+                            id: studentDashboardData?.feeId || 0,
+                            amount: stFeeDue,
+                            dueAmount: stFeeDue,
+                            month: new Date().getMonth() + 1,
+                            year: new Date().getFullYear()
+                          });
+                          setPayNowOpen(true);
+                        }}>Pay ₹{stFeeDue} now</button>
+                      )}
                     </div>
-                    {!hasNoDue && (
-                      <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '16px' }} onClick={() => {
-                        setSelectedFeeForPayment({
-                          id: studentDashboardData?.feeId || 0,
-                          amount: stFeeDue,
-                          dueAmount: stFeeDue,
-                          month: new Date().getMonth() + 1,
-                          year: new Date().getFullYear()
-                        });
-                        setPayNowOpen(true);
-                      }}>Pay ₹{stFeeDue} now</button>
-                    )}
-                  </div>
 
-                  <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginTop: '20px' }}>
-                    <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
-                      <div className="stat-label">Your seat</div>
-                      <div className="stat-value" style={{ fontSize: '20px' }}>{data.assignedSeat || '—'}</div>
+                    <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginTop: '20px' }}>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--teal)' }}>
+                        <div className="stat-label">Your seat</div>
+                        <div className="stat-value" style={{ fontSize: '20px' }}>{data.assignedSeat || '—'}</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
+                        <div className="stat-label">Shift</div>
+                        <div className="stat-value" style={{ fontSize: '20px' }}>{data.shift || '—'}</div>
+                      </div>
+                      <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
+                        <div className="stat-label">Attendance this month</div>
+                        <div className="stat-value" style={{ fontSize: '20px' }}>{data.attendanceDaysThisMonth !== undefined ? data.attendanceDaysThisMonth : 0} days</div>
+                      </div>
                     </div>
-                    <div className="stat-card" style={{ '--stat-color': 'var(--mustard)' }}>
-                      <div className="stat-label">Shift</div>
-                      <div className="stat-value" style={{ fontSize: '20px' }}>{data.shift || '—'}</div>
-                    </div>
-                    <div className="stat-card" style={{ '--stat-color': 'var(--sage)' }}>
-                      <div className="stat-label">Attendance this month</div>
-                      <div className="stat-value" style={{ fontSize: '20px' }}>{data.attendanceDaysThisMonth !== undefined ? data.attendanceDaysThisMonth : 0} days</div>
-                    </div>
-                  </div>
 
-                  <div className="panel" style={{ marginTop: '20px' }}>
-                    <div className="panel-head"><h3 className="panel-title">Membership details</h3></div>
-                    <div className="seat-detail-row"><span>Member since</span><b>{data.joiningDate || '—'}</b></div>
-                    <div className="seat-detail-row"><span>Parent / guardian</span><b>{data.parentName || '—'}</b></div>
-                    <div className="seat-detail-row"><span>Registered mobile</span><b>{data.mobileNumber || '—'}</b></div>
-                    <div className="seat-detail-row"><span>Membership status</span><b>{data.membershipStatus || '—'}</b></div>
-                  </div>
+                    <div className="panel" style={{ marginTop: '20px' }}>
+                      <div className="panel-head"><h3 className="panel-title">Membership details</h3></div>
+                      <div className="seat-detail-row"><span>Member since</span><b>{data.joiningDate || '—'}</b></div>
+                      <div className="seat-detail-row"><span>Parent / guardian</span><b>{data.parentName || '—'}</b></div>
+                      <div className="seat-detail-row"><span>Registered mobile</span><b>{data.mobileNumber || '—'}</b></div>
+                      <div className="seat-detail-row"><span>Membership status</span><b>{data.membershipStatus || '—'}</b></div>
+                    </div>
+                  </section>
+                );
+              })()}
+
+              {/* ================= STUDENT: PAYMENTS ================= */}
+              {studentView === 'payments' && (
+                <section className="sview active">
+                  <div className="page-eyebrow">Ledger</div>
+                  <h1 className="page-title" style={{ marginBottom: '22px' }}>Your payments</h1>
+                  {studentDashboardData?.paymentHistory && studentDashboardData.paymentHistory.length > 0 ? (
+                    <div className="panel">
+                      <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
+                      <table className="ledger">
+                        <thead>
+                          <tr><th>Month</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                          {studentDashboardData.paymentHistory.map((item, idx) => {
+                            const formattedDate = item.paymentDate ? new Date(item.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
+                            return (
+                              <tr key={idx}>
+                                <td className="cell-name">{item.month}/{item.year}</td>
+                                <td className="cell-amount">₹{item.amount}</td>
+                                <td>{item.paymentMode || '—'}</td>
+                                <td>{formattedDate}</td>
+                                <td><span className="stamp paid">Paid</span></td>
+                                <td>
+                                  <span className="panel-link" onClick={() => {
+                                    alert(`RECEIPT\n-----------------\nStudent: ${studentDashboardData.studentName}\nAmount: ₹${item.amount}\nPaid Amount: ₹${item.paidAmount}\nMethod: ${item.paymentMode}\nDate: ${item.paymentDate}`);
+                                  }} style={{ cursor: 'pointer' }}>Receipt</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">💵</div>
+                      <h3 className="empty-state-title">No Payments Yet</h3>
+                      <p className="empty-state-desc">Your payment history and invoices will be listed here once generated.</p>
+                    </div>
+                  )}
                 </section>
-              );
-            })()}
+              )}
 
-            {/* ================= STUDENT: PAYMENTS ================= */}
-            {studentView === 'payments' && (
-              <section className="sview active">
-                <div className="page-eyebrow">Ledger</div>
-                <h1 className="page-title" style={{ marginBottom: '22px' }}>Your payments</h1>
-                {studentDashboardData?.paymentHistory && studentDashboardData.paymentHistory.length > 0 ? (
-                  <div className="panel">
-                    <div className="panel-head"><h3 className="panel-title">Payment history</h3></div>
-                    <table className="ledger">
-                      <thead>
-                        <tr><th>Month</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr>
-                      </thead>
-                      <tbody>
-                        {studentDashboardData.paymentHistory.map((item, idx) => {
-                          const formattedDate = item.paymentDate ? new Date(item.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
-                          return (
+              {/* ================= STUDENT: ATTENDANCE ================= */}
+              {studentView === 'attendance' && (
+                <section className="sview active">
+                  <div className="page-eyebrow">This month</div>
+                  <h1 className="page-title" style={{ marginBottom: '22px' }}>Your attendance</h1>
+                  {studentDashboardData?.attendanceHistory && studentDashboardData.attendanceHistory.length > 0 ? (
+                    <div className="panel">
+                      <div className="panel-head"><h3 className="panel-title">Recent check-ins</h3></div>
+                      <table className="ledger">
+                        <thead>
+                          <tr><th>Date</th><th>Check-in</th><th>Check-out</th></tr>
+                        </thead>
+                        <tbody>
+                          {studentDashboardData.attendanceHistory.map((item, idx) => (
                             <tr key={idx}>
-                              <td className="cell-name">{item.month}/{item.year}</td>
-                              <td className="cell-amount">₹{item.amount}</td>
-                              <td>{item.paymentMode || '—'}</td>
-                              <td>{formattedDate}</td>
-                              <td><span className="stamp paid">Paid</span></td>
-                              <td>
-                                <span className="panel-link" onClick={() => {
-                                  alert(`RECEIPT\n-----------------\nStudent: ${studentDashboardData.studentName}\nAmount: ₹${item.amount}\nPaid Amount: ₹${item.paidAmount}\nMethod: ${item.paymentMode}\nDate: ${item.paymentDate}`);
-                                }} style={{ cursor: 'pointer' }}>Receipt</span>
-                              </td>
+                              <td className="cell-name">{new Date(item.attendanceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</td>
+                              <td className="mono">{item.checkIn || '—'}</td>
+                              <td className="mono">{item.checkOut || '—'}</td>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <div className="empty-state-icon">💵</div>
-                    <h3 className="empty-state-title">No Payments Yet</h3>
-                    <p className="empty-state-desc">Your payment history and invoices will be listed here once generated.</p>
-                  </div>
-                )}
-              </section>
-            )}
-
-            {/* ================= STUDENT: ATTENDANCE ================= */}
-            {studentView === 'attendance' && (
-              <section className="sview active">
-                <div className="page-eyebrow">This month</div>
-                <h1 className="page-title" style={{ marginBottom: '22px' }}>Your attendance</h1>
-                {studentDashboardData?.attendanceHistory && studentDashboardData.attendanceHistory.length > 0 ? (
-                  <div className="panel">
-                    <div className="panel-head"><h3 className="panel-title">Recent check-ins</h3></div>
-                    <table className="ledger">
-                      <thead>
-                        <tr><th>Date</th><th>Check-in</th><th>Check-out</th></tr>
-                      </thead>
-                      <tbody>
-                        {studentDashboardData.attendanceHistory.map((item, idx) => (
-                          <tr key={idx}>
-                            <td className="cell-name">{new Date(item.attendanceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</td>
-                            <td className="mono">{item.checkIn || '—'}</td>
-                            <td className="mono">{item.checkOut || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <div className="empty-state-icon">📋</div>
-                    <h3 className="empty-state-title">No Attendance Logs</h3>
-                    <p className="empty-state-desc">Your daily check-in and check-out logs will be recorded here.</p>
-                  </div>
-                )}
-              </section>
-            )}
-          </main>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="empty-state">
+                      <div className="empty-state-icon">📋</div>
+                      <h3 className="empty-state-title">No Attendance Logs</h3>
+                      <p className="empty-state-desc">Your daily check-in and check-out logs will be recorded here.</p>
+                    </div>
+                  )}
+                </section>
+              )}
+            </main>
           </div>
         } />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -2813,15 +3008,15 @@ export default function App() {
               <div className="form-grid">
                 <div className="field span-2">
                   <label>Seat Number</label>
-                  <input type="text" placeholder="e.g. A01" value={seatForm.seatNumber} onChange={e => setSeatForm({...seatForm, seatNumber: e.target.value})} />
+                  <input type="text" placeholder="e.g. A01" maxLength={10} value={seatForm.seatNumber} onChange={e => setSeatForm({ ...seatForm, seatNumber: e.target.value })} />
                 </div>
                 <div className="field">
                   <label>Floor</label>
-                  <input type="text" placeholder="e.g. First Floor" value={seatForm.floor} onChange={e => setSeatForm({...seatForm, floor: e.target.value})} />
+                  <input type="text" placeholder="e.g. First Floor" value={seatForm.floor} onChange={e => setSeatForm({ ...seatForm, floor: e.target.value })} />
                 </div>
                 <div className="field">
                   <label>Section</label>
-                  <input type="text" placeholder="e.g. Quiet Zone" value={seatForm.section} onChange={e => setSeatForm({...seatForm, section: e.target.value})} />
+                  <input type="text" placeholder="e.g. Quiet Zone" value={seatForm.section} onChange={e => setSeatForm({ ...seatForm, section: e.target.value })} />
                 </div>
               </div>
             </div>
@@ -2830,7 +3025,7 @@ export default function App() {
               <button className="btn btn-primary" onClick={() => {
                 const request = editingSeatId ? api.seatApi.update(editingSeatId, seatForm) : api.seatApi.create(seatForm);
                 request.then(res => {
-                  if(res.success || res.status === 'success') {
+                  if (res.success || res.status === 'success') {
                     showToast(editingSeatId ? 'Seat updated' : 'Seat created');
                     setSeatModalOpen(false);
                     fetchSeats();
@@ -2866,7 +3061,7 @@ export default function App() {
               <div className="form-grid" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div className="field">
                   <label>Status</label>
-                  <select value={attendanceForm.status} onChange={e => setAttendanceForm({...attendanceForm, status: e.target.value})}>
+                  <select value={attendanceForm.status} onChange={e => setAttendanceForm({ ...attendanceForm, status: e.target.value })}>
                     <option value="PRESENT">Present</option>
                     <option value="LEFT">Left / Checked Out</option>
                     <option value="ABSENT">Absent</option>
@@ -2876,11 +3071,11 @@ export default function App() {
                   <React.Fragment>
                     <div className="field">
                       <label>Check-in Time</label>
-                      <input type="time" value={attendanceForm.checkIn} onChange={e => setAttendanceForm({...attendanceForm, checkIn: e.target.value})} />
+                      <input type="time" value={attendanceForm.checkIn} onChange={e => setAttendanceForm({ ...attendanceForm, checkIn: e.target.value })} />
                     </div>
                     <div className="field">
                       <label>Check-out Time</label>
-                      <input type="time" value={attendanceForm.checkOut} onChange={e => setAttendanceForm({...attendanceForm, checkOut: e.target.value})} />
+                      <input type="time" value={attendanceForm.checkOut} onChange={e => setAttendanceForm({ ...attendanceForm, checkOut: e.target.value })} />
                     </div>
                   </React.Fragment>
                 )}
@@ -2931,8 +3126,11 @@ export default function App() {
         open={addStudentOpen}
         onClose={() => { setAddStudentOpen(false); setStudentToEdit(null); }}
         onSubmit={handleAddStudentSubmit}
-        vacantSeats={fullSeats.filter(s => s.status === 'available')}
+        fullSeats={fullSeats}
+        studentsList={studentsList}
         studentToEdit={studentToEdit}
+        selectedSeatLabel={selectedSeatIndex !== null ? getDisplaySeats()[selectedSeatIndex]?.label : ''}
+        defaultShift={seatFilter.includes('Morning') ? 'Morning' : seatFilter.includes('Evening') ? 'Evening' : seatFilter.includes('Full') ? 'Full day' : 'Morning'}
       />
     </React.Fragment>
   );
