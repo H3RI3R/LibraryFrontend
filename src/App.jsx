@@ -294,6 +294,7 @@ export default function App() {
           .catch(err => console.error("Error fetching students:", err));
 
         fetchDashboardData();
+        fetchSettingsData();
       }
     } else if (location.pathname === '/student') {
       fetchStudentDashboard();
@@ -309,10 +310,24 @@ export default function App() {
   // --- Owner Dashboard views navigation ---
   // Views: 'dashboard', 'students', 'seats', 'fees', 'attendance', 'reports', 'settings'
   const [activeView, setActiveView] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // --- Student Portal view navigation ---
-  // Views: 'overview', 'payments', 'attendance'
+  // Views: 'overview', 'payments', 'attendance', 'leave'
   const [studentView, setStudentView] = useState('overview');
+
+  // --- Leaving Requests State ---
+  const [leavingRequests, setLeavingRequests] = useState([]);
+  const [leavingRequestsLoading, setLeavingRequestsLoading] = useState(false);
+  const [leavingForm, setLeavingForm] = useState({ leavingDate: '', reason: '', rating: 5 });
+  const [leavingSubmitting, setLeavingSubmitting] = useState(false);
+  const [leavingResult, setLeavingResult] = useState(null);
+  const [leavingStep, setLeavingStep] = useState('form'); // 'form' | 'preview' | 'confirmed'
+  const [leavingPreviewData, setLeavingPreviewData] = useState(null);
+  const [settleRefundOpen, setSettleRefundOpen] = useState(false);
+  const [settleRefundData, setSettleRefundData] = useState(null);
+  const [settleRefundForm, setSettleRefundForm] = useState({ mode: 'CASH', screenshot: '' });
+  const [settleRefundSubmitting, setSettleRefundSubmitting] = useState(false);
 
   // --- Modals State ---
   const [addStudentOpen, setAddStudentOpen] = useState(false);
@@ -735,7 +750,7 @@ export default function App() {
     }
   };
 
-  const handlePayNowSubmit = (method, amount) => {
+  const handlePayNowSubmit = (method, amount, paymentDate) => {
     if (!selectedFeeForPayment) {
       showToast('Error: No fee record selected.');
       return;
@@ -748,6 +763,35 @@ export default function App() {
 
     // Close the modal first
     setPayNowOpen(false);
+
+    if (method === 'Cash') {
+      api.feeApi.pay({
+        feeId: selectedFeeForPayment.id,
+        paidAmount: amount,
+        paymentMode: 'Cash',
+        paymentDate: paymentDate || new Date().toISOString().split('T')[0]
+      })
+      .then(res => {
+        if (res.status === 'success' || res.success) {
+          showToast('✅ Cash payment recorded successfully!');
+          setSelectedFeeForPayment(null);
+          const role = localStorage.getItem('role');
+          if (role === 'STUDENT') {
+            fetchStudentDashboard();
+          } else {
+            fetchFeeData();
+            fetchDashboardData();
+          }
+        } else {
+          showToast(res.message || '❌ Failed to record cash payment.');
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('❌ Error recording cash payment.');
+      });
+      return;
+    }
 
     // Step 1: Create Razorpay order from backend
     api.feeApi.razorpayCreateOrder(selectedFeeForPayment.id)
@@ -1881,9 +1925,24 @@ export default function App() {
 
         <Route path="/dashboard" element={
           <div className="app">
+            {/* Mobile Header Bar */}
+            <div className="mobile-header">
+              <button className="mobile-toggle" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="Toggle Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="12" x2="21" y2="12"></line>
+                  <line x1="3" y1="6" x2="21" y2="6"></line>
+                  <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+              </button>
+              <div className="brand-title">StudySpace</div>
+            </div>
+
+            {/* Mobile Menu Backdrop */}
+            {mobileMenuOpen && <div className="mobile-backdrop" onClick={() => setMobileMenuOpen(false)} />}
+
             {/* ============ SIDEBAR ============ */}
-            <nav className="sidebar">
-              <div className="brand" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>
+            <nav className={`sidebar ${mobileMenuOpen ? 'open' : ''}`}>
+              <div className="brand" onClick={() => { navigate('/login'); setMobileMenuOpen(false); }} style={{ cursor: 'pointer' }}>
                 <div className="brand-mark">S</div>
                 <div>
                   <div className="brand-name">StudySpace</div>
@@ -1898,6 +1957,7 @@ export default function App() {
                   { id: 'fees', label: 'Fees' },
                   { id: 'attendance', label: 'Attendance' },
                   { id: 'reports', label: 'Reports' },
+                  { id: 'leaving-requests', label: 'Leaving Requests' },
                   { id: 'settings', label: 'Settings' }
                 ].map((view) => (
                   <li
@@ -1905,6 +1965,7 @@ export default function App() {
                     className={`navitem ${activeView === view.id ? 'active' : ''}`}
                     onClick={() => {
                       setActiveView(view.id);
+                      setMobileMenuOpen(false);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                   >
@@ -2022,7 +2083,11 @@ export default function App() {
                         </div>
                         <div className="stat-card" style={{ '--stat-color': 'var(--ink)' }}>
                           <div className="stat-label">Today's Attendance</div>
-                          <div className="stat-value">{dashboardData ? dashboardData.todayAttendanceCheckedIn : 0}</div>
+                          <div className="stat-value" style={{ fontSize: '13.5px', marginTop: '6px', fontFamily: 'inherit', fontWeight: '500', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div>🟢 Checked In: <span className="mono" style={{ fontSize: '14px', fontWeight: '600' }}>{dashboardData ? dashboardData.todayAttendanceCheckedIn : 0}</span></div>
+                            <div>🔴 Checked Out: <span className="mono" style={{ fontSize: '14px', fontWeight: '600' }}>{dashboardData ? dashboardData.todayAttendanceCheckedOut : 0}</span></div>
+                            <div>🟡 Not Arrived: <span className="mono" style={{ fontSize: '14px', fontWeight: '600' }}>{dashboardData ? dashboardData.todayAttendanceNotArrived : 0}</span></div>
+                          </div>
                         </div>
                       </div>
 
@@ -2528,6 +2593,10 @@ export default function App() {
                       (r.seat && r.seat.toLowerCase().includes(attendanceSearch.toLowerCase()))
                     );
 
+                    const checkedInCount = dailyAttendanceRecords.filter(r => r.attendanceRecord && !r.attendanceRecord.checkOut && r.attendanceRecord.status !== 'ABSENT').length;
+                    const checkedOutCount = dailyAttendanceRecords.filter(r => r.attendanceRecord && r.attendanceRecord.checkOut && r.attendanceRecord.status !== 'ABSENT').length;
+                    const notYetArrivedCount = dailyAttendanceRecords.filter(r => !r.attendanceRecord).length;
+
                     return (
                       <section className="view active">
                         <div className="topbar">
@@ -2714,6 +2783,114 @@ export default function App() {
                     </section>
                   )}
 
+                  {/* ================= LEAVING REQUESTS (ADMIN) ================= */}
+                  {activeView === 'leaving-requests' && (() => {
+                    // Fetch on first open
+                    if (!leavingRequestsLoading && leavingRequests.length === 0) {
+                      setLeavingRequestsLoading(true);
+                      const token = localStorage.getItem('token');
+                      fetch(`${API_BASE_URL}/api/leaving/admin/list`, { headers: { Authorization: token } })
+                        .then(r => r.json())
+                        .then(d => { if (d.data) setLeavingRequests(d.data); })
+                        .catch(console.error)
+                        .finally(() => setLeavingRequestsLoading(false));
+                    }
+                    return (
+                      <section className="view active">
+                        <div className="topbar">
+                          <div>
+                            <div className="page-eyebrow">Students</div>
+                            <h1 className="page-title">Leaving Requests</h1>
+                          </div>
+                          <button className="btn btn-ghost" onClick={() => {
+                            setLeavingRequests([]);
+                            setLeavingRequestsLoading(true);
+                            const token = localStorage.getItem('token');
+                            fetch(`${API_BASE_URL}/api/leaving/admin/list`, { headers: { Authorization: token } })
+                              .then(r => r.json())
+                              .then(d => { if (d.data) setLeavingRequests(d.data); })
+                              .catch(console.error)
+                              .finally(() => setLeavingRequestsLoading(false));
+                          }}>↻ Refresh</button>
+                        </div>
+
+                        {leavingRequestsLoading ? (
+                          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--muted)' }}>Loading...</div>
+                        ) : leavingRequests.length === 0 ? (
+                          <div className="empty-state">
+                            <div className="empty-state-icon">🚪</div>
+                            <h3 className="empty-state-title">No Leaving Requests</h3>
+                            <p className="empty-state-desc">When students submit a leaving request, it will appear here.</p>
+                          </div>
+                        ) : (
+                          <div className="panel">
+                            <div className="panel-head"><h3 className="panel-title">All Requests ({leavingRequests.length})</h3></div>
+                            <table className="ledger">
+                              <thead>
+                                <tr>
+                                  <th>Student</th>
+                                  <th>Phone</th>
+                                  <th>Leaving Date</th>
+                                  <th>Reason</th>
+                                  <th>Rating</th>
+                                  <th>Final Amount</th>
+                                  <th>Status</th>
+                                  <th style={{ textAlign: 'right' }}>Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {leavingRequests.map((req, i) => (
+                                  <tr key={i}>
+                                    <td className="cell-name">
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        {req.profileImage
+                                          ? <img src={req.profileImage} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                                          : <span className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>{(req.studentName || 'S').slice(0, 2).toUpperCase()}</span>
+                                        }
+                                        {req.studentName}
+                                      </div>
+                                    </td>
+                                    <td>{req.mobileNumber || '—'}</td>
+                                    <td>{req.leavingDate ? new Date(req.leavingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                                    <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.reason || '—'}</td>
+                                    <td>
+                                      <span style={{ color: 'var(--mustard)', fontWeight: 600 }}>
+                                        {'★'.repeat(req.rating || 0)}{'☆'.repeat(5 - (req.rating || 0))}
+                                      </span>
+                                    </td>
+                                    <td style={{ fontWeight: 600, color: req.finalPendingFee < 0 ? 'var(--teal)' : req.finalPendingFee > 0 ? 'var(--red, #e05)' : 'var(--ink-soft)' }}>
+                                      {req.finalPendingFee < 0
+                                        ? `Refund ₹${Math.abs(req.finalPendingFee)}`
+                                        : req.finalPendingFee > 0
+                                          ? `Due ₹${req.finalPendingFee}`
+                                          : 'Clear'}
+                                    </td>
+                                    <td>
+                                      <span className={`stamp ${req.settled ? 'paid' : 'due'}`}>
+                                        {req.settled ? 'Settled' : 'Pending'}
+                                      </span>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      {req.finalPendingFee < 0 && !req.settled ? (
+                                        <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 13, background: 'var(--teal)' }} onClick={() => {
+                                          setSettleRefundData(req);
+                                          setSettleRefundForm({ mode: 'CASH', screenshot: '' });
+                                          setSettleRefundOpen(true);
+                                        }}>Settle Refund</button>
+                                      ) : req.finalPendingFee < 0 && req.settled ? (
+                                        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{req.refundMode}</span>
+                                      ) : null}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
                   {/* ================= SETTINGS ================= */}
                   {activeView === 'settings' && (
                     <section className="view active">
@@ -2848,6 +3025,7 @@ export default function App() {
               <div className={`student-tab ${studentView === 'overview' ? 'active' : ''}`} onClick={() => setStudentView('overview')}>Overview</div>
               <div className={`student-tab ${studentView === 'payments' ? 'active' : ''}`} onClick={() => setStudentView('payments')}>Payments</div>
               <div className={`student-tab ${studentView === 'attendance' ? 'active' : ''}`} onClick={() => setStudentView('attendance')}>Attendance</div>
+              <div className={`student-tab ${studentView === 'leave' ? 'active' : ''}`} style={{ color: studentView === 'leave' ? 'var(--ink)' : 'var(--muted)' }} onClick={() => setStudentView('leave')}>Leave Library</div>
             </nav>
 
             <main className="student-content">
@@ -2987,6 +3165,250 @@ export default function App() {
                   )}
                 </section>
               )}
+              {/* ================= STUDENT: LEAVE LIBRARY ================= */}
+              {studentView === 'leave' && (
+                <section className="sview active">
+                  <div className="page-eyebrow">Membership</div>
+                  <h1 className="page-title" style={{ marginBottom: '8px' }}>Leave Library</h1>
+                  <p style={{ color: 'var(--muted)', marginBottom: '28px', fontSize: '14px' }}>
+                    Fill in the details below. If you have a pending amount, you will need to pay it via Razorpay before leaving.
+                  </p>
+
+                  {/* ── STEP: CONFIRMED ─────────────────────────────────── */}
+                  {leavingStep === 'confirmed' && leavingResult && (
+                    <div className="panel" style={{ padding: '32px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 52, marginBottom: 16 }}>{leavingResult.isRefund ? '💰' : '✅'}</div>
+                      <h2 style={{ marginBottom: 12, color: 'var(--ink)' }}>Leaving Confirmed!</h2>
+                      <p style={{ color: 'var(--muted)', marginBottom: 20 }}>{leavingResult.message}</p>
+                      <div style={{ background: 'var(--surface)', borderRadius: 12, padding: '16px 24px', display: 'inline-block', marginBottom: 24 }}>
+                        <div style={{ fontSize: 13, color: 'var(--muted)' }}>Leaving Date</div>
+                        <div style={{ fontWeight: 700, fontSize: 18 }}>{leavingResult.leavingDate}</div>
+                      </div>
+                      <br />
+                      <button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={() => {
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('role');
+                        window.location.href = '/';
+                      }}>Log Out</button>
+                    </div>
+                  )}
+
+                  {/* ── STEP: PREVIEW (dues shown, pay or confirm) ────── */}
+                  {leavingStep === 'preview' && leavingPreviewData && (
+                    <div className="panel" style={{ padding: '28px' }}>
+                      <h3 className="panel-title" style={{ marginBottom: '20px' }}>Review Your Dues</h3>
+
+                      {/* Summary row */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 24 }}>
+                        <div style={{ background: 'var(--surface)', borderRadius: 12, padding: '16px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Leaving On</div>
+                          <div style={{ fontWeight: 700 }}>{leavingPreviewData.leavingDate}</div>
+                        </div>
+                        <div style={{ background: 'var(--surface)', borderRadius: 12, padding: '16px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Final Amount</div>
+                          <div style={{ fontWeight: 700, fontSize: 18,
+                            color: leavingPreviewData.finalPendingFee < 0 ? 'var(--teal)'
+                              : leavingPreviewData.finalPendingFee > 0 ? '#e05050' : 'var(--ink)'
+                          }}>
+                            {leavingPreviewData.finalPendingFee > 0 ? `₹${leavingPreviewData.finalPendingFee} Due`
+                              : leavingPreviewData.finalPendingFee < 0 ? `₹${Math.abs(leavingPreviewData.finalPendingFee)} Refund`
+                              : '₹0 Clear'}
+                          </div>
+                        </div>
+                        <div style={{ background: 'var(--surface)', borderRadius: 12, padding: '16px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Action Required</div>
+                          <div style={{ fontWeight: 700, color: leavingPreviewData.requiresPayment ? '#e05050' : 'var(--teal)' }}>
+                            {leavingPreviewData.requiresPayment ? 'Payment Required' : 'Ready to Leave'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 24 }}>{leavingPreviewData.message}</p>
+
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <button className="btn btn-ghost" onClick={() => setLeavingStep('form')}>← Go Back</button>
+
+                        {leavingPreviewData.requiresPayment ? (
+                          // ── PAY via Razorpay then confirm ────────────────
+                          <button
+                            className="btn btn-primary"
+                            disabled={leavingSubmitting}
+                            style={{ background: 'linear-gradient(135deg, #e05050, #c0392b)', minWidth: 200 }}
+                            onClick={() => {
+                              const options = {
+                                key: leavingPreviewData.razorpayKeyId,
+                                amount: leavingPreviewData.amountInPaise,
+                                currency: 'INR',
+                                name: 'Library — Leaving Fee',
+                                description: `Final dues for leaving on ${leavingPreviewData.leavingDate}`,
+                                order_id: leavingPreviewData.razorpayOrderId,
+                                handler: async (paymentResponse) => {
+                                  setLeavingSubmitting(true);
+                                  try {
+                                    const token = localStorage.getItem('token');
+                                    const res = await fetch(`${API_BASE_URL}/api/leaving/confirm`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json', Authorization: token },
+                                      body: JSON.stringify({
+                                        leavingDate: leavingForm.leavingDate,
+                                        reason: leavingForm.reason,
+                                        rating: String(leavingForm.rating),
+                                        razorpayOrderId: paymentResponse.razorpay_order_id,
+                                        razorpayPaymentId: paymentResponse.razorpay_payment_id,
+                                        razorpaySignature: paymentResponse.razorpay_signature
+                                      })
+                                    });
+                                    const data = await res.json();
+                                    if (data.success || data.status === 'success') {
+                                      setLeavingResult(data.data);
+                                      setLeavingStep('confirmed');
+                                      showToast('Payment successful. Leaving confirmed!');
+                                    } else {
+                                      showToast(data.message || 'Confirmation failed. Contact admin.');
+                                    }
+                                  } catch (e) {
+                                    showToast('Network error. Contact admin with your payment ID.');
+                                  } finally {
+                                    setLeavingSubmitting(false);
+                                  }
+                                },
+                                prefill: { name: studentDashboardData?.studentName || '' },
+                                theme: { color: '#c0392b' }
+                              };
+                              const rzp = new window.Razorpay(options);
+                              rzp.on('payment.failed', (resp) => showToast('Payment failed: ' + resp.error.description));
+                              rzp.open();
+                            }}
+                          >
+                            {leavingSubmitting ? 'Processing...' : `Pay ₹${leavingPreviewData.finalPendingFee} & Leave`}
+                          </button>
+                        ) : (
+                          // ── No dues — confirm directly ─────────────────
+                          <button
+                            className="btn btn-primary"
+                            disabled={leavingSubmitting}
+                            onClick={async () => {
+                              if (!window.confirm('Confirm leaving? This cannot be undone.')) return;
+                              setLeavingSubmitting(true);
+                              try {
+                                const token = localStorage.getItem('token');
+                                const res = await fetch(`${API_BASE_URL}/api/leaving/confirm`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json', Authorization: token },
+                                  body: JSON.stringify({
+                                    leavingDate: leavingForm.leavingDate,
+                                    reason: leavingForm.reason,
+                                    rating: String(leavingForm.rating)
+                                  })
+                                });
+                                const data = await res.json();
+                                if (data.success || data.status === 'success') {
+                                  setLeavingResult(data.data);
+                                  setLeavingStep('confirmed');
+                                  showToast('Leaving confirmed!');
+                                } else {
+                                  showToast(data.message || 'Failed to confirm.');
+                                }
+                              } catch (e) {
+                                showToast('Network error. Please try again.');
+                              } finally {
+                                setLeavingSubmitting(false);
+                              }
+                            }}
+                          >
+                            {leavingSubmitting ? 'Confirming...' : 'Confirm Leaving'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── STEP: FORM ───────────────────────────────────── */}
+                  {leavingStep === 'form' && (
+                    <div className="panel" style={{ padding: '28px' }}>
+                      <h3 className="panel-title" style={{ marginBottom: '24px' }}>Leaving Request Form</h3>
+
+                      {/* Leaving Date */}
+                      <div className="field" style={{ marginBottom: '20px' }}>
+                        <label style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Leaving Date <span style={{ color: '#e05' }}>*</span></label>
+                        <input
+                          type="date"
+                          min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                          value={leavingForm.leavingDate}
+                          onChange={e => setLeavingForm({ ...leavingForm, leavingDate: e.target.value })}
+                          style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--card)', width: '100%', maxWidth: 300 }}
+                        />
+                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Your dues will be prorated up to this date.</div>
+                      </div>
+
+                      {/* Star Rating */}
+                      <div className="field" style={{ marginBottom: '20px' }}>
+                        <label style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Your Experience Rating</label>
+                        <div style={{ display: 'flex', gap: 8, fontSize: 28, cursor: 'pointer' }}>
+                          {[1,2,3,4,5].map(star => (
+                            <span
+                              key={star}
+                              onClick={() => setLeavingForm({ ...leavingForm, rating: star })}
+                              style={{ color: star <= leavingForm.rating ? '#f5a623' : '#ccc', transition: 'color 0.15s' }}
+                            >{star <= leavingForm.rating ? '★' : '☆'}</span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Reason */}
+                      <div className="field" style={{ marginBottom: '28px' }}>
+                        <label style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Reason for Leaving</label>
+                        <textarea
+                          rows={4}
+                          placeholder="Tell us why you are leaving (optional)..."
+                          value={leavingForm.reason}
+                          onChange={e => setLeavingForm({ ...leavingForm, reason: e.target.value })}
+                          style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--card)', resize: 'vertical' }}
+                        />
+                      </div>
+
+                      {/* Warning */}
+                      <div style={{ background: 'rgba(220,53,69,0.08)', border: '1px solid rgba(220,53,69,0.25)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13, color: '#c0392b' }}>
+                        ⚠️ <strong>This action cannot be undone.</strong> Your membership will end on the selected date.
+                        If you have pending dues, you must pay via Razorpay before leaving.
+                      </div>
+
+                      <button
+                        className="btn btn-primary"
+                        disabled={leavingSubmitting || !leavingForm.leavingDate}
+                        onClick={async () => {
+                          setLeavingSubmitting(true);
+                          try {
+                            const token = localStorage.getItem('token');
+                            const res = await fetch(`${API_BASE_URL}/api/leaving/preview`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', Authorization: token },
+                              body: JSON.stringify({
+                                leavingDate: leavingForm.leavingDate,
+                                reason: leavingForm.reason,
+                                rating: leavingForm.rating
+                              })
+                            });
+                            const data = await res.json();
+                            if (data.success || data.status === 'success') {
+                              setLeavingPreviewData(data.data);
+                              setLeavingStep('preview');
+                            } else {
+                              showToast(data.message || 'Failed to calculate dues.');
+                            }
+                          } catch (e) {
+                            showToast('Network error. Please try again.');
+                          } finally {
+                            setLeavingSubmitting(false);
+                          }
+                        }}
+                      >
+                        {leavingSubmitting ? 'Calculating...' : 'Check Dues & Proceed →'}
+                      </button>
+                    </div>
+                  )}
+                </section>
+              )}
             </main>
           </div>
         } />
@@ -2994,6 +3416,99 @@ export default function App() {
       </Routes>
 
       {/* ============ MODALS ============ */}
+
+      {/* Settle Refund Modal */}
+      {settleRefundOpen && settleRefundData && (
+        <div className="modal-overlay open" onClick={(e) => { if (e.target.classList.contains('modal-overlay')) setSettleRefundOpen(false); }}>
+          <div className="modal-card">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Settle Refund</h3>
+                <div className="modal-sub">For {settleRefundData.studentName}</div>
+              </div>
+              <button className="close-btn" onClick={() => setSettleRefundOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 8, marginBottom: 20, textAlign: 'center' }}>
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>Amount to Refund</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--teal)' }}>₹{Math.abs(settleRefundData.finalPendingFee)}</div>
+              </div>
+
+              <div className="field" style={{ marginBottom: '20px' }}>
+                <label>Refund Mode</label>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="radio" name="refundMode" checked={settleRefundForm.mode === 'CASH'} onChange={() => setSettleRefundForm({ ...settleRefundForm, mode: 'CASH' })} /> CASH
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="radio" name="refundMode" checked={settleRefundForm.mode === 'UPI'} onChange={() => setSettleRefundForm({ ...settleRefundForm, mode: 'UPI' })} /> UPI
+                  </label>
+                </div>
+              </div>
+
+              {settleRefundForm.mode === 'UPI' && (
+                <div className="field" style={{ marginBottom: '20px' }}>
+                  <label>Payment Screenshot <span style={{ color: '#e05' }}>*</span></label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setSettleRefundForm({ ...settleRefundForm, screenshot: reader.result });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    style={{ padding: '8px', border: '1px solid var(--rule)', borderRadius: 8, width: '100%' }}
+                  />
+                  {settleRefundForm.screenshot && (
+                    <img src={settleRefundForm.screenshot} alt="Preview" style={{ marginTop: 12, maxWidth: '100%', maxHeight: 200, borderRadius: 8, objectFit: 'contain', border: '1px solid var(--rule)' }} />
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost" onClick={() => setSettleRefundOpen(false)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                disabled={settleRefundSubmitting || (settleRefundForm.mode === 'UPI' && !settleRefundForm.screenshot)}
+                onClick={async () => {
+                  setSettleRefundSubmitting(true);
+                  try {
+                    const token = localStorage.getItem('token');
+                    const res = await fetch(`${API_BASE_URL}/api/leaving/admin/settle/${settleRefundData.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json', Authorization: token },
+                      body: JSON.stringify({
+                        refundMode: settleRefundForm.mode,
+                        refundScreenshot: settleRefundForm.screenshot
+                      })
+                    });
+                    const data = await res.json();
+                    if (data.success || data.status === 'success') {
+                      showToast('Refund settled successfully.');
+                      setSettleRefundOpen(false);
+                      // Update table state
+                      setLeavingRequests(prev => prev.map(req => req.id === settleRefundData.id ? { ...req, settled: true, refundMode: settleRefundForm.mode } : req));
+                    } else {
+                      showToast(data.message || 'Failed to settle refund.');
+                    }
+                  } catch (e) {
+                    showToast('Network error.');
+                  } finally {
+                    setSettleRefundSubmitting(false);
+                  }
+                }}
+              >
+                {settleRefundSubmitting ? 'Processing...' : 'Confirm Settle'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {seatModalOpen && (
         <div className="modal-overlay open" onClick={(e) => { if (e.target.classList.contains('modal-overlay')) setSeatModalOpen(false); }}>
           <div className="modal-card">
