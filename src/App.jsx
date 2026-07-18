@@ -430,6 +430,57 @@ export default function App() {
     }
   };
 
+  const handleStudentCheckIn = () => {
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE_URL}/api/attendance/check-in`, {
+      method: 'POST',
+      headers: {
+        'Authorization': token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        studentId: studentDashboardData.studentId,
+        seatNumber: studentDashboardData.assignedSeat
+      })
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.success || resData.status === 'success') {
+          showToast('Checked in successfully!');
+          fetchStudentDashboard();
+        } else {
+          showToast(`Check-in failed: ${resData.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("Check-in error:", err);
+        showToast('An error occurred during check-in.');
+      });
+  };
+
+  const handleStudentCheckOut = () => {
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE_URL}/api/attendance/check-out/${studentDashboardData.studentId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': token
+      }
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.success || resData.status === 'success') {
+          showToast('Checked out successfully!');
+          fetchStudentDashboard();
+        } else {
+          showToast(`Check-out failed: ${resData.message}`);
+        }
+      })
+      .catch(err => {
+        console.error("Check-out error:", err);
+        showToast('An error occurred during check-out.');
+      });
+  };
+
   const fetchSettingsData = () => {
     setSettingsLoading(true);
     api.libraryApi.getSettings()
@@ -3165,6 +3216,16 @@ export default function App() {
                 <section className="sview active">
                   <div className="page-eyebrow">This month</div>
                   <h1 className="page-title" style={{ marginBottom: '22px' }}>Your attendance</h1>
+                  
+                  <div className="toolbar" style={{ marginBottom: '20px', gap: '10px', display: 'flex' }}>
+                    <button className="btn btn-primary" onClick={handleStudentCheckIn}>
+                      Check In
+                    </button>
+                    <button className="btn btn-ghost" onClick={handleStudentCheckOut} style={{ border: '1px solid var(--border)' }}>
+                      Check Out
+                    </button>
+                  </div>
+
                   {studentDashboardData?.attendanceHistory && studentDashboardData.attendanceHistory.length > 0 ? (
                     <div className="panel">
                       <div className="panel-head"><h3 className="panel-title">Recent check-ins</h3></div>
