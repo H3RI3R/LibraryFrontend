@@ -463,6 +463,16 @@ export default function App() {
       .finally(() => setSettingsLoading(false));
   };
 
+  const fetchLeavingRequests = () => {
+    setLeavingRequestsLoading(true);
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE_URL}/api/leaving/admin/list`, { headers: { Authorization: token } })
+      .then(r => r.json())
+      .then(d => { if (d.data) setLeavingRequests(d.data); })
+      .catch(console.error)
+      .finally(() => setLeavingRequestsLoading(false));
+  };
+
   useEffect(() => {
     if (activeView === 'dashboard') {
       fetchDashboardData();
@@ -479,6 +489,9 @@ export default function App() {
     }
     if (activeView === 'settings') {
       fetchSettingsData();
+    }
+    if (activeView === 'leaving-requests') {
+      fetchLeavingRequests();
     }
   }, [activeView, feeFilter]);
 
@@ -2785,16 +2798,6 @@ export default function App() {
 
                   {/* ================= LEAVING REQUESTS (ADMIN) ================= */}
                   {activeView === 'leaving-requests' && (() => {
-                    // Fetch on first open
-                    if (!leavingRequestsLoading && leavingRequests.length === 0) {
-                      setLeavingRequestsLoading(true);
-                      const token = localStorage.getItem('token');
-                      fetch(`${API_BASE_URL}/api/leaving/admin/list`, { headers: { Authorization: token } })
-                        .then(r => r.json())
-                        .then(d => { if (d.data) setLeavingRequests(d.data); })
-                        .catch(console.error)
-                        .finally(() => setLeavingRequestsLoading(false));
-                    }
                     return (
                       <section className="view active">
                         <div className="topbar">
@@ -2804,13 +2807,7 @@ export default function App() {
                           </div>
                           <button className="btn btn-ghost" onClick={() => {
                             setLeavingRequests([]);
-                            setLeavingRequestsLoading(true);
-                            const token = localStorage.getItem('token');
-                            fetch(`${API_BASE_URL}/api/leaving/admin/list`, { headers: { Authorization: token } })
-                              .then(r => r.json())
-                              .then(d => { if (d.data) setLeavingRequests(d.data); })
-                              .catch(console.error)
-                              .finally(() => setLeavingRequestsLoading(false));
+                            fetchLeavingRequests();
                           }}>↻ Refresh</button>
                         </div>
 
