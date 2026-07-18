@@ -286,7 +286,9 @@ export default function App() {
                 age: s.age,
                 parentName: s.parentName,
                 parentMobile: s.parentMobile,
-                address: s.address
+                address: s.address,
+                monthlyFee: s.monthlyFee,
+                joinedRaw: s.joiningDate
               }));
               setStudentsList(mapped);
             }
@@ -1164,8 +1166,12 @@ export default function App() {
       formData.append('profileImage', studentData.profileImage);
     }
 
-    fetch(`${API_BASE_URL}/api/student`, {
-      method: 'POST',
+    const isEdit = !!studentToEdit;
+    const url = isEdit ? `${API_BASE_URL}/api/student/${studentToEdit.id}` : `${API_BASE_URL}/api/student`;
+    const method = isEdit ? 'PUT' : 'POST';
+
+    fetch(url, {
+      method: method,
       headers: {
         'Authorization': token
       },
@@ -1183,9 +1189,22 @@ export default function App() {
             seat: s.assignedSeat,
             joined: s.joiningDate ? parseDateDMY(s.joiningDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
             status: s.membershipStatus ? s.membershipStatus.toLowerCase() : 'active',
-            profileImage: s.profileImage
+            profileImage: s.profileImage,
+            email: s.email,
+            gender: s.gender,
+            age: s.age,
+            parentName: s.parentName,
+            parentMobile: s.parentMobile,
+            address: s.address,
+            monthlyFee: s.monthlyFee,
+            joinedRaw: s.joiningDate
           };
-          setStudentsList([newStudent, ...studentsList]);
+          
+          if (isEdit) {
+            setStudentsList(studentsList.map(st => st.id === newStudent.id ? newStudent : st));
+          } else {
+            setStudentsList([newStudent, ...studentsList]);
+          }
 
           // Update Seat Status
           setFullSeats(fullSeats.map(seat => {
@@ -1197,7 +1216,8 @@ export default function App() {
           fetchSeats();
 
           setAddStudentOpen(false);
-          showToast(`<b>${studentData.name}</b> registered — seat ${studentData.seat}, ${studentData.shift} shift.`);
+          setStudentToEdit(null);
+          showToast(`<b>${studentData.name}</b> ${isEdit ? 'updated' : 'registered'} — seat ${studentData.seat}, ${studentData.shift} shift.`);
         } else {
           showToast(`Failed to register student: ${resData.message}`);
         }
@@ -2266,6 +2286,16 @@ export default function App() {
                                       </span>
                                     </td>
                                     <td>
+                                      <span
+                                        className="panel-link"
+                                        style={{marginRight: '8px'}}
+                                        onClick={() => {
+                                          setStudentToEdit(s);
+                                          setAddStudentOpen(true);
+                                        }}
+                                      >
+                                        Edit
+                                      </span>
                                       <span
                                         className="panel-link"
                                         onClick={() => {
