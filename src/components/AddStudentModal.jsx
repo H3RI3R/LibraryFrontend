@@ -134,17 +134,16 @@ export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [
       return;
     }
 
-    const phoneRegex = /^[0-9]{10}$/;
-    const cleanMobile = mobile ? mobile.replace(/[\s-]/g, '') : '';
-    if (!phoneRegex.test(cleanMobile)) {
-      alert('Please enter a valid 10-digit mobile number.');
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    if (cleanMobile.length < 10) {
+      alert('Please enter a valid mobile number (at least 10 digits).');
       return;
     }
 
     if (parentMobile) {
-      const cleanParentMobile = parentMobile.replace(/[\s-]/g, '');
-      if (!phoneRegex.test(cleanParentMobile)) {
-        alert('Please enter a valid 10-digit parent mobile number.');
+      const cleanParentMobile = String(parentMobile).replace(/\D/g, '');
+      if (cleanParentMobile.length < 10) {
+        alert('Please enter a valid parent mobile number (at least 10 digits).');
         return;
       }
     }
