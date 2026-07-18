@@ -1159,6 +1159,7 @@ export default function App() {
     formData.append('parentName', updatedData.parentName || '');
     formData.append('parentMobile', updatedData.parentMobile || '');
     formData.append('address', updatedData.address || '');
+    formData.append('email', studentDashboardData.email || '');
     formData.append('age', studentDashboardData.age || 20);
     formData.append('gender', studentDashboardData.gender || 'MALE');
     formData.append('joiningDate', studentDashboardData.joiningDate || '');
