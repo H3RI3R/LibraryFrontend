@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [], studentsList = [], studentToEdit, selectedSeatLabel = '', defaultShift = 'Morning' }) {
+export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [], studentsList = [], studentToEdit, selectedSeatLabel = '', defaultShift = 'Morning', allowedShifts = ['Morning', 'Evening', 'Full day'] }) {
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
   const [joined, setJoined] = useState('');
@@ -40,7 +40,7 @@ export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [
         setParentName(studentToEdit.parentName || '');
         setParentMobile(studentToEdit.parentMobile || '');
         setAddress(studentToEdit.address || '');
-        setShift(studentToEdit.shift || 'Morning');
+        setShift(studentToEdit.shift || (allowedShifts[0] || 'Morning'));
         setSeat(studentToEdit.seat || '');
         setStatus(studentToEdit.status || 'active');
         setMonthlyFee(studentToEdit.monthlyFee || 800);
@@ -55,7 +55,8 @@ export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [
         setParentName('');
         setParentMobile('');
         setAddress('');
-        setShift(defaultShift || 'Morning');
+        const initialShift = allowedShifts.includes(defaultShift) ? defaultShift : (allowedShifts[0] || 'Morning');
+        setShift(initialShift);
         setSeat(selectedSeatLabel || '');
         setStatus('active');
         setMonthlyFee(800);
@@ -65,7 +66,7 @@ export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [
         setAge(20);
       }
     }
-  }, [open, studentToEdit, defaultShift, selectedSeatLabel]);
+  }, [open, studentToEdit, defaultShift, selectedSeatLabel, allowedShifts]);
 
   const getVacantSeatsForShift = () => {
     return fullSeats.filter(seat => {
@@ -237,9 +238,9 @@ export default function AddStudentModal({ open, onClose, onSubmit, fullSeats = [
               <div className="field">
                 <label>Shift</label>
                 <select value={shift} onChange={(e) => setShift(e.target.value)}>
-                  <option>Morning</option>
-                  <option>Evening</option>
-                  <option>Full day</option>
+                  {allowedShifts.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
               <div className="field">

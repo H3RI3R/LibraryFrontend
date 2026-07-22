@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import Toast from './components/Toast';
 import PayNowModal from './components/PayNowModal';
 import AddStudentModal from './components/AddStudentModal';
@@ -107,7 +107,7 @@ export default function App() {
   const [loginTab, setLoginTab] = useState('email'); // 'mobile' or 'email'
   const [ownerMobile, setOwnerMobile] = useState('98110 22341');
   const [ownerEmail, setOwnerEmail] = useState('');
-  const [ownerPassword, setOwnerPassword] = useState('••••••••');
+  const [ownerPassword, setOwnerPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
@@ -117,12 +117,21 @@ export default function App() {
   const [otpInputs, setOtpInputs] = useState(['4', '2', '8', '1', '9', '5']);
 
   // --- OTP Login State ---
-  const [showOtpView, setShowOtpView] = useState(false);
+  const [searchParams] = useSearchParams();
+  const showOtpView = searchParams.get('view') === 'otp';
   const [otpEmail, setOtpEmail] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [timer, setTimer] = useState(0);
   const [rememberMe, setRememberMe] = useState(false);
+
+  // --- Forgot Password State ---
+  const showForgotPasswordView = searchParams.get('view') === 'forgot';
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordOtpSent, setForgotPasswordOtpSent] = useState(false);
+  const [forgotPasswordOtpCode, setForgotPasswordOtpCode] = useState('');
+  const [forgotPasswordTimer, setForgotPasswordTimer] = useState(0);
+  const [retrievedPassword, setRetrievedPassword] = useState('');
 
   useEffect(() => {
     let interval = null;
@@ -136,28 +145,49 @@ export default function App() {
     return () => clearInterval(interval);
   }, [timer]);
 
+  useEffect(() => {
+    let interval = null;
+    if (forgotPasswordTimer > 0) {
+      interval = setInterval(() => {
+        setForgotPasswordTimer((prev) => prev - 1);
+      }, 1000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [forgotPasswordTimer]);
+
   // --- Onboarding Wizard State (Persistent when moving back/forth) ---
   const [obStep, setObStep] = useState(1);
-  const [obOwnerName, setObOwnerName] = useState('Ritik Soni');
-  const [obOwnerMobile, setObOwnerMobile] = useState('08890846567');
-  const [obOwnerEmail, setObOwnerEmail] = useState('staff@gmail.com');
-  const [obOwnerPassword, setObOwnerPassword] = useState('123456');
-  const [obOwnerPassword2, setObOwnerPassword2] = useState('123456');
-  const [obLibName, setObLibName] = useState('Sunrise Reading Room');
-  const [obLibCity, setObLibCity] = useState('Sector 12, Dadri');
-  const [obLibState, setObLibState] = useState('Uttar Pradesh');
-  const [obLibAddress, setObLibAddress] = useState('Building, street, landmark');
+  const [obOwnerName, setObOwnerName] = useState('');
+  const [obOwnerMobile, setObOwnerMobile] = useState('');
+  const [obOwnerEmail, setObOwnerEmail] = useState('');
+  const [obOwnerPassword, setObOwnerPassword] = useState('');
+  const [obOwnerPassword2, setObOwnerPassword2] = useState('');
+  const [obLibName, setObLibName] = useState('');
+  const [obLibCity, setObLibCity] = useState('');
+  const [obLibState, setObLibState] = useState('');
+  const [obLibAddress, setObLibAddress] = useState('');
   const [obShifts, setObShifts] = useState({ Morning: true, Evening: true, 'Full day': false });
   const [obShiftTimings, setObShiftTimings] = useState({
-    Morning: '7 AM – 2 PM',
-    Evening: '2 PM – 9 PM',
-    'Full day': '7 AM – 9 PM'
+    Morning: '07:00 – 14:00',
+    Evening: '14:00 – 21:00',
+    'Full day': '07:00 – 21:00'
+  });
+  const [obWorkingDaysList, setObWorkingDaysList] = useState({
+    Monday: true,
+    Tuesday: true,
+    Wednesday: true,
+    Thursday: true,
+    Friday: true,
+    Saturday: true,
+    Sunday: true
   });
   const [studentShiftFilter, setStudentShiftFilter] = useState('All shifts');
-  const [obTotalSeats, setObTotalSeats] = useState(60);
-  const [obFeeAmount, setObFeeAmount] = useState(800);
-  const [obDueDay, setObDueDay] = useState(5);
-  const [obPayMethods, setObPayMethods] = useState({ Cash: true, UPI: true, 'Bank Transfer': false });
+  const [obTotalSeats, setObTotalSeats] = useState('');
+  const [obFeeAmount, setObFeeAmount] = useState('');
+  const [obDueDay, setObDueDay] = useState('');
+  const [obPayMethods, setObPayMethods] = useState({ Cash: false, UPI: false, 'Bank Transfer': false });
 
   // Onboarding verification states
   const [obEmailVerified, setObEmailVerified] = useState(false);
@@ -1036,6 +1066,61 @@ export default function App() {
       });
   };
 
+  const handleForgotPasswordSendOtp = (e) => {
+    if (e) e.preventDefault();
+    if (!forgotPasswordEmail) {
+      showToast('Please enter your email.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(forgotPasswordEmail)) {
+      showToast('Please enter a valid email address.');
+      return;
+    }
+    fetch(`${API_BASE_URL}/login/getOtp?email=${encodeURIComponent(forgotPasswordEmail)}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === 'success') {
+          showToast('OTP sent successfully.');
+          setForgotPasswordOtpSent(true);
+          setForgotPasswordTimer(30);
+          setRetrievedPassword('');
+        } else {
+          showToast(resData.message || 'Failed to send OTP.');
+        }
+      })
+      .catch(err => {
+        console.error("Forgot password OTP send error:", err);
+        showToast('Failed to connect to server.');
+      });
+  };
+
+  const handleForgotPasswordVerify = (e) => {
+    if (e) e.preventDefault();
+    if (!forgotPasswordOtpCode) {
+      showToast('Please enter the OTP.');
+      return;
+    }
+    fetch(`${API_BASE_URL}/login/forgot-password-verify?email=${encodeURIComponent(forgotPasswordEmail)}&otp=${encodeURIComponent(forgotPasswordOtpCode)}`, {
+      method: 'POST'
+    })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === 'success') {
+          showToast('OTP verified successfully.');
+          setRetrievedPassword(resData.password);
+        } else {
+          showToast(resData.message || 'Verification failed.');
+        }
+      })
+      .catch(err => {
+        console.error("Forgot password verify error:", err);
+        showToast('Failed to connect to server.');
+      });
+  };
+
   const handleSendOtpLogin = (e) => {
     if (e) e.preventDefault();
     if (!otpEmail) {
@@ -1337,10 +1422,11 @@ export default function App() {
       state: obLibState,
       address: obLibAddress,
       shifts: Object.keys(obShifts).filter(k => obShifts[k]).map(k => `${k} (${obShiftTimings[k]})`).join(','),
+      workingDays: Object.keys(obWorkingDaysList).filter(d => obWorkingDaysList[d]).join(','),
       totalSeats: obTotalSeats,
       monthlyFee: obFeeAmount,
       dueDay: obDueDay,
-      paymentMethods: Object.keys(obPayMethods).filter(k => obPayMethods[k]).join(','),
+      paymentMethods: 'Cash,UPI,Bank Transfer',
       planId: isSkipTrial ? 0 : selectedPlanId,
       isFreeTrial: isSkipTrial,
       paymentTxnId: paymentTxnId
@@ -1508,6 +1594,51 @@ export default function App() {
         showToast('Please add your library name and city.');
         return;
       }
+
+      let activeShiftsCount = Object.keys(obShifts).filter(k => obShifts[k]).length;
+      if (activeShiftsCount === 0) {
+        showToast('Please select at least one active shift.');
+        return;
+      }
+
+      for (const shiftName of Object.keys(obShifts)) {
+        if (obShifts[shiftName]) {
+          const timing = obShiftTimings[shiftName] || '';
+          const parts = timing.split(' – ');
+          if (parts.length !== 2 || !parts[0] || !parts[1]) {
+            showToast(`Please select valid start and end times for ${shiftName} shift.`);
+            return;
+          }
+          const [startH, startM] = parts[0].split(':').map(Number);
+          const [endH, endM] = parts[1].split(':').map(Number);
+          const startMinutes = startH * 60 + startM;
+          const endMinutes = endH * 60 + endM;
+
+          if (endMinutes <= startMinutes) {
+            showToast(`For ${shiftName} shift, end time must be after start time.`);
+            return;
+          }
+
+          if (shiftName === 'Morning') {
+            if (startH < 4 || startH > 12) {
+              showToast('Morning shift start time should be between 4:00 AM and 12:00 PM.');
+              return;
+            }
+          }
+          if (shiftName === 'Evening') {
+            if (startH < 12 || startH > 22) {
+              showToast('Evening shift start time should be between 12:00 PM and 10:00 PM.');
+              return;
+            }
+          }
+          if (shiftName === 'Full day') {
+            if (endMinutes - startMinutes < 360) {
+              showToast('Full day shift must be at least 6 hours long.');
+              return;
+            }
+          }
+        }
+      }
     }
     if (obStep === 3) {
       if (!obTotalSeats || obTotalSeats < 1) {
@@ -1583,7 +1714,78 @@ export default function App() {
 
             <div className="login-form-wrap">
               <div className="login-card">
-                {!showOtpView ? (
+                {showForgotPasswordView ? (
+                  <div>
+                    <div className="login-eyebrow">Password Recovery</div>
+                    <h1 className="login-title">Forgot Password?</h1>
+                    <div className="login-sub">Enter your registered email address to retrieve your password.</div>
+
+                    <form onSubmit={forgotPasswordOtpSent ? handleForgotPasswordVerify : handleForgotPasswordSendOtp}>
+                      <div className="field">
+                        <label>Email address</label>
+                        <input
+                          type="email"
+                          placeholder="Enter your email address"
+                          value={forgotPasswordEmail}
+                          onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                          disabled={forgotPasswordOtpSent}
+                          required
+                        />
+                      </div>
+
+                      {forgotPasswordOtpSent && (
+                        <div>
+                          <div className="field">
+                            <label>Enter the 4-digit code sent to your email</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 1234"
+                              value={forgotPasswordOtpCode}
+                              onChange={(e) => setForgotPasswordOtpCode(e.target.value)}
+                              required
+                            />
+                          </div>
+                          
+                          {forgotPasswordTimer > 0 ? (
+                            <div className="login-sub" style={{ marginBottom: '15px', color: '#ff4d4f' }}>
+                              Resend OTP in {forgotPasswordTimer}s
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-ghost login-btn"
+                              style={{ marginBottom: '15px' }}
+                              onClick={handleForgotPasswordSendOtp}
+                            >
+                              Resend OTP
+                            </button>
+                          )}
+
+                          {!retrievedPassword && (
+                            <button type="submit" className="btn btn-primary login-btn">Verify OTP</button>
+                          )}
+                        </div>
+                      )}
+
+                      {!forgotPasswordOtpSent && (
+                        <button type="submit" className="btn btn-primary login-btn">Send OTP</button>
+                      )}
+                    </form>
+
+                    {retrievedPassword && (
+                      <div className="field" style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px dashed #4caf50' }}>
+                        <label style={{ color: '#4caf50', fontWeight: 'bold' }}>Your Password:</label>
+                        <div style={{ fontSize: '18px', fontFamily: 'monospace', letterSpacing: '1px', marginTop: '5px', color: '#fff' }}>
+                          {retrievedPassword}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="login-note" style={{ marginTop: '20px' }}>
+                      <a href="#" onClick={(e) => { e.preventDefault(); navigate('/login'); setForgotPasswordOtpSent(false); setForgotPasswordEmail(''); setForgotPasswordOtpCode(''); setRetrievedPassword(''); }}>Back to Login</a>
+                    </div>
+                  </div>
+                ) : !showOtpView ? (
                   <div>
                     <div className="login-eyebrow">Welcome back</div>
                     <h1 className="login-title">Log in to your desk</h1>
@@ -1606,20 +1808,20 @@ export default function App() {
                     ) : (
                       <div className="field">
                         <label>Email address</label>
-                        <input type="email" placeholder="ritik@sunrisereading.in" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} />
+                        <input type="email" placeholder="Enter your email address" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} />
                       </div>
                     )}
                     */}
                       <div className="field">
                         <label>Email address</label>
-                        <input type="email" placeholder="ritik@sunrisereading.in" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} required />
+                        <input type="email" placeholder="Enter your email address" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} required />
                       </div>
                       <div className="field">
                         <label>Password</label>
                         <div className="password-wrapper">
                           <input
                             type={showLoginPassword ? "text" : "password"}
-                            placeholder="••••••••"
+                            placeholder="Enter your password"
                             value={ownerPassword}
                             onChange={(e) => setOwnerPassword(e.target.value)}
                           />
@@ -1641,13 +1843,13 @@ export default function App() {
                         <label className="remember">
                           <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} style={{ width: 'auto' }} /> Keep me logged in
                         </label>
-                        <a href="#" onClick={(e) => e.preventDefault()}>Forgot password?</a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/login?view=forgot'); }}>Forgot password?</a>
                       </div>
                       <button type="submit" className="btn btn-primary login-btn">Log in</button>
                     </form>
 
                     <div className="login-divider">or</div>
-                    <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(true)}>Send OTP instead</button>
+                    <button className="btn btn-ghost login-btn" onClick={() => navigate('/login?view=otp')}>Send OTP instead</button>
                     <div className="login-note" style={{ marginTop: '20px' }}>
                       New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
                     </div>
@@ -1661,7 +1863,7 @@ export default function App() {
                     <form onSubmit={otpSent ? handleVerifyOtpLogin : handleSendOtpLogin}>
                       <div className="field">
                         <label>Email address</label>
-                        <input type="email" placeholder="e.g. ritik@sunrisereading.in" value={otpEmail} onChange={(e) => setOtpEmail(e.target.value)} disabled={otpSent} required />
+                        <input type="email" placeholder="Enter your email address" value={otpEmail} onChange={(e) => setOtpEmail(e.target.value)} disabled={otpSent} required />
                       </div>
 
                       {otpSent && (
@@ -1689,7 +1891,7 @@ export default function App() {
                     </form>
 
                     <div className="login-divider">or</div>
-                    <button className="btn btn-ghost login-btn" onClick={() => setShowOtpView(false)}>Log in with password instead</button>
+                    <button className="btn btn-ghost login-btn" onClick={() => navigate('/login')}>Log in with password instead</button>
                     <div className="login-note" style={{ marginTop: '20px' }}>
                       New library on StudySpace? <a href="#" onClick={(e) => { e.preventDefault(); navigate('/onboarding'); }}>Set up your account</a>
                     </div>
@@ -1757,7 +1959,7 @@ export default function App() {
                         </div>
                         <div className="field">
                           <label>Mobile number (optional)</label>
-                          <input type="tel" placeholder="9811022341" maxLength={10} value={obOwnerMobile} onChange={(e) => setObOwnerMobile(e.target.value)} />
+                          <input type="tel" placeholder="Enter mobile number" maxLength={10} value={obOwnerMobile} onChange={(e) => setObOwnerMobile(e.target.value)} />
                         </div>
 
                         {obOtpSent && !obEmailVerified && (
@@ -1859,17 +2061,83 @@ export default function App() {
                                   <span>{shiftName}</span>
                                 </label>
                                 {obShifts[shiftName] && (
-                                  <input
-                                    type="text"
-                                    placeholder="e.g. 7 AM – 2 PM"
-                                    className="form-control"
-                                    style={{ padding: '6px 10px', fontSize: '12px', maxWidth: '160px', height: '32px' }}
-                                    value={obShiftTimings[shiftName]}
-                                    onChange={(e) => setObShiftTimings({ ...obShiftTimings, [shiftName]: e.target.value })}
-                                    required
-                                  />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <input
+                                      type="time"
+                                      className="form-control"
+                                      style={{ padding: '6px 10px', fontSize: '12px', width: '120px', height: '32px' }}
+                                      value={(obShiftTimings[shiftName] || '00:00 – 00:00').split(' – ')[0]}
+                                      onChange={(e) => {
+                                        const parts = (obShiftTimings[shiftName] || '00:00 – 00:00').split(' – ');
+                                        const end = parts[1] || '00:00';
+                                        setObShiftTimings({
+                                          ...obShiftTimings,
+                                          [shiftName]: `${e.target.value} – ${end}`
+                                        });
+                                      }}
+                                      required
+                                    />
+                                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>to</span>
+                                    <input
+                                      type="time"
+                                      className="form-control"
+                                      style={{ padding: '6px 10px', fontSize: '12px', width: '120px', height: '32px' }}
+                                      value={(obShiftTimings[shiftName] || '00:00 – 00:00').split(' – ')[1]}
+                                      onChange={(e) => {
+                                        const parts = (obShiftTimings[shiftName] || '00:00 – 00:00').split(' – ');
+                                        const start = parts[0] || '00:00';
+                                        setObShiftTimings({
+                                          ...obShiftTimings,
+                                          [shiftName]: `${start} – ${e.target.value}`
+                                        });
+                                      }}
+                                      required
+                                    />
+                                  </div>
                                 )}
                               </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="field span-2">
+                          <label>Working days</label>
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              style={{ padding: '4px 8px', fontSize: '12px' }}
+                              onClick={() => {
+                                const allDays = {};
+                                ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].forEach(d => allDays[d] = true);
+                                setObWorkingDaysList(allDays);
+                              }}
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              style={{ padding: '4px 8px', fontSize: '12px' }}
+                              onClick={() => {
+                                const noDays = {};
+                                ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].forEach(d => noDays[d] = false);
+                                setObWorkingDaysList(noDays);
+                              }}
+                            >
+                              Clear All
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px' }}>
+                            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
+                              <label key={day} className="ob-check" style={{ margin: 0, minWidth: '110px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={obWorkingDaysList[day]}
+                                  onChange={(e) => setObWorkingDaysList({ ...obWorkingDaysList, [day]: e.target.checked })}
+                                />
+                                <span>{day}</span>
+                              </label>
                             ))}
                           </div>
                         </div>
@@ -1913,21 +2181,7 @@ export default function App() {
                             required
                           />
                         </div>
-                        <div className="field">
-                          <label>Accepted payment methods</label>
-                          <div className="ob-check-row" style={{ marginTop: '2px' }}>
-                            {['Cash', 'UPI', 'Bank Transfer'].map((method) => (
-                              <label className="ob-check" key={method}>
-                                <input
-                                  type="checkbox"
-                                  checked={obPayMethods[method]}
-                                  onChange={(e) => setObPayMethods({ ...obPayMethods, [method]: e.target.checked })}
-                                />
-                                <span>{method}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
+
                       </div>
                     </div>
                   )}
@@ -2140,6 +2394,12 @@ export default function App() {
                         <div>
                           <div className="page-eyebrow">Saturday, 4 July</div>
                           <h1 className="page-title">Good morning, {ownerName.split(' ')[0]}</h1>
+                          {dashboardData?.workingDays && (
+                            <div style={{ fontSize: '13px', color: 'var(--teal)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span>📅 Working Days:</span>
+                              <span style={{ fontWeight: '500', color: 'var(--text)' }}>{dashboardData.workingDays.split(',').join(', ')}</span>
+                            </div>
+                          )}
                         </div>
                         <div className="topbar-actions">
                           <button className="btn btn-ghost" onClick={() => setActiveView('attendance')}>Today's register</button>
@@ -3116,7 +3376,13 @@ export default function App() {
                 return (
                   <section className="sview active">
                     <div className="page-eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-                    <h1 className="page-title" style={{ marginBottom: '22px' }}>Hi, {data.studentName || 'Student'}</h1>
+                    <h1 className="page-title" style={{ marginBottom: '4px' }}>Hi, {data.studentName || 'Student'}</h1>
+                    {data.workingDays && (
+                      <div style={{ fontSize: '13px', color: 'var(--teal)', marginBottom: '22px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>📅 Library Open Days:</span>
+                        <span style={{ fontWeight: '500', color: 'var(--text)' }}>{data.workingDays.split(',').join(', ')}</span>
+                      </div>
+                    )}
 
                     <div className={`sub-card ${hasNoDue ? 'paid' : ''}`}>
                       <div className="sub-card-top">
@@ -3735,6 +4001,13 @@ export default function App() {
         studentToEdit={studentToEdit}
         selectedSeatLabel={selectedSeatIndex !== null ? getDisplaySeats()[selectedSeatIndex]?.label : ''}
         defaultShift={seatFilter.includes('Morning') ? 'Morning' : seatFilter.includes('Evening') ? 'Evening' : seatFilter.includes('Full') ? 'Full day' : 'Morning'}
+        allowedShifts={(settingsData.shifts || '')
+          .split(',')
+          .map(s => {
+            const idx = s.indexOf('(');
+            return (idx !== -1 ? s.substring(0, idx) : s).trim();
+          })
+          .filter(Boolean)}
       />
     </React.Fragment>
   );

@@ -120,6 +120,11 @@ export const libraryApi = {
     updateSettings: (data) => apiCall('/api/library/settings', 'PUT', data)
 };
 
+export const authApi = {
+    getOtp: (email) => apiCall(`/login/getOtp?email=${encodeURIComponent(email)}`, 'POST'),
+    verifyForgotPassword: (email, otp) => apiCall(`/login/forgot-password-verify?email=${encodeURIComponent(email)}&otp=${otp}`, 'POST'),
+};
+
 export default {
     studentApi,
     seatApi,
@@ -128,5 +133,6 @@ export default {
     reportApi,
     dashboardApi,
     libraryApi,
+    authApi,
     API_BASE_URL
 };
