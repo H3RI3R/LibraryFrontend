@@ -373,6 +373,9 @@ table.ledger tr:hover td{background:var(--paper-deep);}
   outline:none; transition:border-color .15s ease;
 }
 .field input:focus{border-color:var(--teal);}
+.field input[type="checkbox"], .field input[type="radio"] {
+  width: auto;
+}
 .field-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:22px;}
 .field-row a{font-size:12.5px; color:var(--teal); font-weight:600; text-decoration:none;}
 .remember{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted);}
@@ -759,3 +762,31 @@ table.ledger tr:hover td{background:var(--paper-deep);}
   margin-right: 8px;
   vertical-align: middle;
 }
+
+/* Switcher item button hover & active states */
+.switcher-item-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+.switcher-item-btn:hover:not(:disabled) {
+  background: var(--paper-deep, #efe8d6);
+}
+.switcher-item-btn:disabled {
+  cursor: default;
+}
+.switcher-item-btn.active {
+  background: var(--teal-tint, #e3ece7);
+  color: var(--teal);
+}
+

@@ -203,6 +203,11 @@ export default function App() {
   const [otpCode, setOtpCode] = useState('');
   const [timer, setTimer] = useState(0);
   const [rememberMe, setRememberMe] = useState(false);
+  const [loginLibraries, setLoginLibraries] = useState([]);
+  const [showLoginLibraryChooser, setShowLoginLibraryChooser] = useState(false);
+  const [tempLoginToken, setTempLoginToken] = useState('');
+  const [tempLoginRole, setTempLoginRole] = useState('');
+  const [tempLoginEmail, setTempLoginEmail] = useState('');
 
   // --- Forgot Password State ---
   const showForgotPasswordView = searchParams.get('view') === 'forgot';
@@ -266,6 +271,7 @@ export default function App() {
   const [obTotalSeats, setObTotalSeats] = useState('');
   const [obFeeAmount, setObFeeAmount] = useState('');
   const [obDueDay, setObDueDay] = useState('');
+  const [showObDueDayPicker, setShowObDueDayPicker] = useState(false);
   const [obPayMethods, setObPayMethods] = useState({ Cash: false, UPI: false, 'Bank Transfer': false });
 
   // Onboarding verification states
@@ -353,7 +359,9 @@ export default function App() {
 
   // Global Route Guard to redirect if token is missing
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('token');
+    const token = localStorage.getItem('token') || urlToken;
     if ((location.pathname === '/dashboard' || location.pathname === '/student') && !token) {
       navigate('/login');
     }
@@ -538,7 +546,7 @@ export default function App() {
       .then(res => {
         if (res.status === 'success' || res.success) {
           const data = res.data;
-          window.open(window.location.origin + '?token=' + encodeURIComponent(data.token) + '&role=' + data.role, '_blank');
+          window.open(window.location.origin + '/dashboard?token=' + encodeURIComponent(data.token) + '&role=' + data.role, '_blank');
         } else {
           showToast(res.message || '❌ Failed to switch library.');
         }
@@ -549,23 +557,22 @@ export default function App() {
       });
   };
 
-  const handleAddLibrarySubmit = (e) => {
-    if (e) e.preventDefault();
-    if (!newLibName || !newLibCity || !newLibAddress) {
+  const handleAddLibrarySubmit = (formData) => {
+    if (!formData || !formData.libraryName || !formData.city || !formData.address) {
       showToast('❌ Please fill in the required fields.');
       return;
     }
 
     const payload = {
-      libraryName: newLibName,
-      city: newLibCity,
-      state: newLibState,
-      address: newLibAddress,
-      shifts: Object.keys(newLibShifts).filter(k => newLibShifts[k]).map(k => `${k} (${newLibShiftTimings[k]})`).join(','),
-      workingDays: Object.keys(newLibWorkingDays).filter(d => newLibWorkingDays[d]).join(','),
-      totalSeats: newLibTotalSeats,
-      monthlyFee: newLibFeeAmount,
-      dueDay: newLibDueDay,
+      libraryName: formData.libraryName,
+      city: formData.city,
+      state: formData.state,
+      address: formData.address,
+      shifts: formData.shifts,
+      workingDays: formData.workingDays,
+      totalSeats: formData.totalSeats,
+      monthlyFee: formData.monthlyFee,
+      dueDay: formData.dueDay,
       paymentMethods: 'Cash,UPI',
       isFreeTrial: false,
       planId: 0
@@ -576,11 +583,6 @@ export default function App() {
         if (res.status === 'success' || res.success) {
           showToast('✅ New library added successfully!');
           setShowAddLibraryModal(false);
-          // Clear inputs
-          setNewLibName('');
-          setNewLibAddress('');
-          setNewLibCity('');
-          setNewLibState('');
           // Refresh libraries list
           fetchOwnerLibraries();
         } else {
@@ -1198,35 +1200,84 @@ export default function App() {
       .then(res => res.json())
       .then(loginData => {
         if (loginData.status === 'success') {
-          localStorage.setItem('token', loginData.token);
-          localStorage.setItem('role', loginData.role);
-
           if (loginData.role === 'STUDENT') {
+            localStorage.setItem('token', loginData.token);
+            localStorage.setItem('role', loginData.role);
             setLoginLoading(false);
             navigate('/student');
             showToast('Logged in successfully.');
             return;
           }
 
-          // Now fetch status/details
-          fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
-            .then(res => res.json())
-            .then(resData => {
+          if (loginData.role === 'OWNER') {
+            // Check libraries list directly from login response
+            const libs = loginData.libraries || [];
+            if (loginData.hasMultipleLibraries && libs.length > 1) {
+              // Show library selection screen
+              setLoginLibraries(libs);
+              setTempLoginToken(loginData.token);
+              setTempLoginRole(loginData.role);
+              setTempLoginEmail(emailToCheck);
+              setShowLoginLibraryChooser(true);
               setLoginLoading(false);
-              if (resData.status === 'success') {
-                setIsTrialExpired(resData.data.isExpired);
-                setLibraryName(resData.data.library.name);
-                setLibraryCity(resData.data.library.city);
-                setTotalSeats(resData.data.library.totalSeats);
-              }
+            } else if (libs.length === 1) {
+              // Exactly 1 library - automatically switch to it so its ID is saved in the token
+              const singleLib = libs[0];
+              fetch(`${API_BASE_URL}/api/library/owner/switch-library?libraryId=${singleLib.id}`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': loginData.token
+                }
+              })
+                .then(swRes => swRes.json())
+                .then(swData => {
+                  setLoginLoading(false);
+                  const finalToken = (swData.status === 'success' || swData.success) ? swData.data.token : loginData.token;
+                  localStorage.setItem('token', finalToken);
+                  localStorage.setItem('role', loginData.role);
+                  
+                  // Proceed to status check
+                  fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
+                    .then(res => res.json())
+                    .then(resData => {
+                      if (resData.status === 'success') {
+                        setIsTrialExpired(resData.data.isExpired);
+                        setLibraryName(resData.data.library.name);
+                        setLibraryCity(resData.data.library.city);
+                        setTotalSeats(resData.data.library.totalSeats);
+                      }
+                      navigate('/dashboard');
+                      showToast('Logged in successfully.');
+                    })
+                    .catch(() => {
+                      navigate('/dashboard');
+                      showToast('Logged in successfully.');
+                    });
+                })
+                .catch(() => {
+                  setLoginLoading(false);
+                  localStorage.setItem('token', loginData.token);
+                  localStorage.setItem('role', loginData.role);
+                  navigate('/dashboard');
+                  showToast('Logged in successfully.');
+                });
+            } else {
+              // No libraries yet (onboarding required)
+              setLoginLoading(false);
+              localStorage.setItem('token', loginData.token);
+              localStorage.setItem('role', loginData.role);
               navigate('/dashboard');
               showToast('Logged in successfully.');
-            })
-            .catch(err => {
-              setLoginLoading(false);
-              console.error("Error verifying trial status:", err);
-              navigate('/dashboard');
-            });
+            }
+            return;
+          }
+
+          // Fallback for other roles (e.g. ADMIN)
+          localStorage.setItem('token', loginData.token);
+          localStorage.setItem('role', loginData.role);
+          setLoginLoading(false);
+          navigate('/dashboard');
+          showToast('Logged in successfully.');
         } else {
           setLoginLoading(false);
           showToast(`Login failed: ${loginData.message}`);
@@ -1236,6 +1287,47 @@ export default function App() {
         setLoginLoading(false);
         console.error("Login API error:", err);
         showToast('Failed to connect to login API.');
+      });
+  };
+
+  const handleChooseLoginLibrary = (libraryId) => {
+    setLoginLoading(true);
+    fetch(`${API_BASE_URL}/api/library/owner/switch-library?libraryId=${libraryId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': tempLoginToken
+      }
+    })
+      .then(res => res.json())
+      .then(swData => {
+        setLoginLoading(false);
+        const finalToken = (swData.status === 'success' || swData.success) ? swData.data.token : tempLoginToken;
+        localStorage.setItem('token', finalToken);
+        localStorage.setItem('role', tempLoginRole);
+
+        // Fetch status
+        fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(tempLoginEmail)}`)
+          .then(res => res.json())
+          .then(resData => {
+            if (resData.status === 'success') {
+              setIsTrialExpired(resData.data.isExpired);
+              setLibraryName(resData.data.library.name);
+              setLibraryCity(resData.data.library.city);
+              setTotalSeats(resData.data.library.totalSeats);
+            }
+            setShowLoginLibraryChooser(false);
+            navigate('/dashboard');
+            showToast('Logged in successfully.');
+          })
+          .catch(() => {
+            setShowLoginLibraryChooser(false);
+            navigate('/dashboard');
+            showToast('Logged in successfully.');
+          });
+      })
+      .catch(err => {
+        setLoginLoading(false);
+        showToast('❌ Error logging in to selected library.');
       });
   };
 
@@ -1906,7 +1998,57 @@ export default function App() {
 
             <div className="login-form-wrap">
               <div className="login-card">
-                {showForgotPasswordView ? (
+                {showLoginLibraryChooser ? (
+                  <div>
+                    <div className="login-eyebrow">Multiple Libraries Found</div>
+                    <h1 className="login-title" style={{ fontSize: '20px', marginBottom: '8px' }}>Select Library</h1>
+                    <div className="login-sub" style={{ marginBottom: '20px' }}>Choose which library you want to manage today:</div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto', marginBottom: '20px' }}>
+                      {loginLibraries.map((lib) => (
+                        <div
+                          key={lib.id}
+                          onClick={() => handleChooseLoginLibrary(lib.id)}
+                          className="login-lib-choice"
+                          style={{
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--rule)',
+                            background: 'var(--card)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-start'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--paper-deep)';
+                            e.currentTarget.style.borderColor = 'var(--teal)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'var(--card)';
+                            e.currentTarget.style.borderColor = 'var(--rule)';
+                          }}
+                        >
+                          <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--ink)' }}>{lib.name}</span>
+                          <span style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px' }}>{lib.city}, {lib.state}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost login-btn"
+                      onClick={() => {
+                        setShowLoginLibraryChooser(false);
+                        setLoginLibraries([]);
+                        setTempLoginToken('');
+                      }}
+                    >
+                      Back to Login
+                    </button>
+                  </div>
+                ) : showForgotPasswordView ? (
                   <div>
                     <div className="login-eyebrow">Password Recovery</div>
                     <h1 className="login-title">Forgot Password?</h1>
@@ -2362,26 +2504,87 @@ export default function App() {
                           <label>Monthly fee per seat (₹)</label>
                           <input type="number" placeholder="e.g. 800" min="0" value={obFeeAmount} onChange={(e) => setObFeeAmount(parseInt(e.target.value, 10))} required />
                         </div>
-                        <div className="field">
-                          <label>Fee due date (day of month)</label>
-                          <input
-                            type="date"
-                            value={(() => {
-                              const today = new Date();
-                              const y = today.getFullYear();
-                              const m = String(today.getMonth() + 1).padStart(2, '0');
-                              const d = String(obDueDay).padStart(2, '0');
-                              return `${y}-${m}-${d}`;
-                            })()}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                const selectedDate = new Date(e.target.value);
-                                const day = selectedDate.getDate();
-                                setObDueDay(day);
-                              }
+                        <div className="field" style={{ position: 'relative' }}>
+                          <label>Fee due date (day of month) *</label>
+                          <div 
+                            onClick={() => setShowObDueDayPicker(!showObDueDayPicker)}
+                            style={{
+                              padding: '11px 13px',
+                              border: '1px solid var(--rule)',
+                              borderRadius: '7px',
+                              background: 'var(--card)',
+                              color: 'var(--ink)',
+                              fontSize: '13.5px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              userSelect: 'none',
+                              height: '42px'
                             }}
-                            required
-                          />
+                          >
+                            <span>{obDueDay ? `Day ${obDueDay} of every month` : 'Select due day'}</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.7 }}>
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </div>
+
+                          {showObDueDayPicker && (
+                            <>
+                              <div 
+                                style={{ position: 'fixed', inset: 0, zIndex: 998 }} 
+                                onClick={() => setShowObDueDayPicker(false)} 
+                              />
+                              <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                right: 0,
+                                marginTop: '6px',
+                                background: 'var(--card, #fff)',
+                                border: '1px solid var(--rule)',
+                                borderRadius: '10px',
+                                padding: '12px',
+                                boxShadow: '0 10px 25px rgba(27,42,58,0.12)',
+                                zIndex: 999
+                              }}>
+                                <div style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(7, 1fr)',
+                                  gap: '6px',
+                                  textAlign: 'center'
+                                }}>
+                                  {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                                    <div
+                                      key={day}
+                                      onClick={() => {
+                                        setObDueDay(day);
+                                        setShowObDueDayPicker(false);
+                                      }}
+                                      style={{
+                                        padding: '8px 0',
+                                        fontSize: '12.5px',
+                                        fontWeight: '600',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        background: obDueDay === day ? 'var(--teal)' : 'transparent',
+                                        color: obDueDay === day ? '#fff' : 'var(--ink)',
+                                        transition: 'background 0.15s ease'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (obDueDay !== day) e.currentTarget.style.background = 'var(--paper-deep)';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (obDueDay !== day) e.currentTarget.style.background = 'transparent';
+                                      }}
+                                    >
+                                      {day}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
 
                       </div>
@@ -2622,7 +2825,20 @@ export default function App() {
                                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                                   <polyline points="9 22 9 12 15 12 15 22"></polyline>
                                 </svg>
-                                <span>Switch Library</span>
+                                <span>
+                                  {(() => {
+                                    let activeLibId = null;
+                                    const token = localStorage.getItem('token');
+                                    if (token) {
+                                      try { activeLibId = String(JSON.parse(atob(token.split('.')[1])).schoolId); } catch(e) {}
+                                    }
+                                    if ((!activeLibId || activeLibId === "0") && ownerLibraries.length > 0) {
+                                      activeLibId = String(ownerLibraries[0].id);
+                                    }
+                                    const currentLib = ownerLibraries.find(l => String(l.id) === activeLibId);
+                                    return currentLib ? currentLib.name : 'Switch Library';
+                                  })()}
+                                </span>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: showLibrarySwitcher ? 'rotate(180deg)' : 'none' }}>
                                   <polyline points="6 9 12 15 18 9"></polyline>
                                 </svg>
@@ -2655,28 +2871,21 @@ export default function App() {
                                       if (token) {
                                         try { activeLibId = String(JSON.parse(atob(token.split('.')[1])).schoolId); } catch(e) {}
                                       }
+                                      if ((!activeLibId || activeLibId === "0") && ownerLibraries.length > 0) {
+                                        activeLibId = String(ownerLibraries[0].id);
+                                      }
                                       const isActive = String(lib.id) === activeLibId;
                                       return (
                                         <button
                                           key={lib.id}
+                                          className={`switcher-item-btn ${isActive ? 'active' : ''}`}
+                                          disabled={isActive}
                                           onClick={() => {
                                             handleSwitchLibrary(lib.id);
                                             setShowLibrarySwitcher(false);
                                           }}
                                           style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'flex-start',
-                                            width: '100%',
-                                            padding: '8px 12px',
-                                            borderRadius: '8px',
-                                            border: 'none',
-                                            background: isActive ? 'var(--teal-soft)' : 'transparent',
-                                            color: isActive ? 'var(--teal)' : 'var(--ink)',
-                                            textAlign: 'left',
-                                            cursor: 'pointer',
-                                            transition: 'background 0.2s',
-                                            fontFamily: 'inherit'
+                                            opacity: isActive ? 0.85 : 1
                                           }}
                                         >
                                           <span style={{ fontWeight: '600', fontSize: '13px' }}>{lib.name}</span>

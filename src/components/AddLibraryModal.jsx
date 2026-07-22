@@ -33,6 +33,7 @@ export default function AddLibraryModal({ open, onClose, onSubmit }) {
   const [totalSeats, setTotalSeats] = useState(60);
   const [monthlyFee, setMonthlyFee] = useState(800);
   const [dueDay, setDueDay] = useState(5);
+  const [showDueDayPicker, setShowDueDayPicker] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -143,9 +144,87 @@ export default function AddLibraryModal({ open, onClose, onSubmit }) {
                   <label>Monthly Fee (₹) *</label>
                   <input type="number" min="0" value={monthlyFee} onChange={(e) => setMonthlyFee(parseFloat(e.target.value))} required />
                 </div>
-                <div className="field">
+                <div className="field" style={{ position: 'relative' }}>
                   <label>Fee Due Day (1-28) *</label>
-                  <input type="number" min="1" max="28" value={dueDay} onChange={(e) => setDueDay(parseInt(e.target.value))} required />
+                  <div 
+                    onClick={() => setShowDueDayPicker(!showDueDayPicker)}
+                    style={{
+                      padding: '11px 13px',
+                      border: '1px solid var(--rule)',
+                      borderRadius: '7px',
+                      background: 'var(--card)',
+                      color: 'var(--ink)',
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      userSelect: 'none',
+                      height: '42px'
+                    }}
+                  >
+                    <span>{dueDay ? `Day ${dueDay}` : 'Select'}</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.7 }}>
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </div>
+
+                  {showDueDayPicker && (
+                    <>
+                      <div 
+                        style={{ position: 'fixed', inset: 0, zIndex: 998 }} 
+                        onClick={() => setShowDueDayPicker(false)} 
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        marginTop: '6px',
+                        background: 'var(--card, #fff)',
+                        border: '1px solid var(--rule)',
+                        borderRadius: '10px',
+                        padding: '12px',
+                        boxShadow: '0 10px 25px rgba(27,42,58,0.12)',
+                        zIndex: 999
+                      }}>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(7, 1fr)',
+                          gap: '6px',
+                          textAlign: 'center'
+                        }}>
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                            <div
+                              key={day}
+                              onClick={() => {
+                                setDueDay(day);
+                                setShowDueDayPicker(false);
+                              }}
+                              style={{
+                                padding: '8px 0',
+                                fontSize: '12.5px',
+                                fontWeight: '600',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                background: dueDay === day ? 'var(--teal)' : 'transparent',
+                                color: dueDay === day ? '#fff' : 'var(--ink)',
+                                transition: 'background 0.15s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (dueDay !== day) e.currentTarget.style.background = 'var(--paper-deep)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (dueDay !== day) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              {day}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
