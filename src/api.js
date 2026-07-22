@@ -125,6 +125,12 @@ export const authApi = {
     verifyForgotPassword: (email, otp) => apiCall(`/login/forgot-password-verify?email=${encodeURIComponent(email)}&otp=${otp}`, 'POST'),
 };
 
+export const ownerApi = {
+    getLibraries: () => apiCall('/api/library/owner/libraries'),
+    addLibrary: (data) => apiCall('/api/library/owner/libraries', 'POST', data),
+    switchLibrary: (libraryId) => apiCall(`/api/library/owner/switch-library?libraryId=${libraryId}`, 'POST'),
+};
+
 export default {
     studentApi,
     seatApi,
@@ -134,5 +140,6 @@ export default {
     dashboardApi,
     libraryApi,
     authApi,
+    ownerApi,
     API_BASE_URL
 };

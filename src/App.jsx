@@ -6,10 +6,51 @@ import AddStudentModal from './components/AddStudentModal';
 import ViewStudentModal from './components/ViewStudentModal';
 import StudentProfileModal from './components/StudentProfileModal';
 import AddFeeModal from './components/AddFeeModal';
+import AddLibraryModal from './components/AddLibraryModal';
 import api, { API_BASE_URL } from './api';
 
+// Lazily load Razorpay checkout.js only when a payment is about to open.
+// This prevents Razorpay from pre-fetching dozens of language/feature chunks
+// on every normal page visit (the real cause of the continuous network hits).
+let razorpayLoaded = false;
+function loadRazorpay() {
+  return new Promise((resolve, reject) => {
+    if (razorpayLoaded && window.Razorpay) {
+      return resolve(window.Razorpay);
+    }
+    const existing = document.getElementById('razorpay-checkout-js');
+    if (existing) {
+      existing.addEventListener('load', () => { razorpayLoaded = true; resolve(window.Razorpay); });
+      existing.addEventListener('error', reject);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'razorpay-checkout-js';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => { razorpayLoaded = true; resolve(window.Razorpay); };
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+}
+
+let activeFetchCount = 0;
 const originalFetch = window.fetch;
 window.fetch = async function (...args) {
+  const isBackground = typeof args[0] === 'string' && (
+    args[0].includes('/api/attendance/today') || 
+    args[0].includes('/checkout-static-next.razorpay.com') ||
+    args[0].includes('/login/getOtp') ||
+    args[0].includes('/login/forgot-password-verify') ||
+    args[0].includes('/login/verify-otp-login') ||
+    args[0].includes('/login/owner') ||
+    args[0].includes('/login/student')
+  );
+
+  if (!isBackground) {
+    activeFetchCount++;
+    window.dispatchEvent(new CustomEvent('fetch-count-change', { detail: activeFetchCount }));
+  }
+
   try {
     const response = await originalFetch(...args);
     let shouldRedirect = false;
@@ -39,6 +80,11 @@ window.fetch = async function (...args) {
     return response;
   } catch (error) {
     throw error;
+  } finally {
+    if (!isBackground) {
+      activeFetchCount = Math.max(0, activeFetchCount - 1);
+      window.dispatchEvent(new CustomEvent('fetch-count-change', { detail: activeFetchCount }));
+    }
   }
 };
 
@@ -101,6 +147,39 @@ export default function App() {
   // --- Routing Navigation ---
   const navigate = useNavigate();
   const location = useLocation();
+
+  // --- Global API Loading State ---
+  const [globalLoading, setGlobalLoading] = useState(false);
+
+  useEffect(() => {
+    let timeoutId = null;
+    const handleFetchCountChange = (e) => {
+      const isFetching = e.detail > 0;
+      if (isFetching) {
+        if (!timeoutId) {
+          timeoutId = setTimeout(() => {
+            setGlobalLoading(true);
+          }, 350); // Show only if API takes longer than 350ms
+        }
+      } else {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        setGlobalLoading(false);
+      }
+    };
+    window.addEventListener('fetch-count-change', handleFetchCountChange);
+    return () => {
+      window.removeEventListener('fetch-count-change', handleFetchCountChange);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, []);
+
+  // --- Button Loading States ---
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [otpLoginLoading, setOtpLoginLoading] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
 
   // --- Login State ---
   const [loginRole, setLoginRole] = useState('owner'); // 'owner' or 'student'
@@ -222,18 +301,47 @@ export default function App() {
   // Seat filter (seats view)
   const [seatFilter, setSeatFilter] = useState('All shifts');
 
+  // --- Owner Switcher State ---
+  const [ownerLibraries, setOwnerLibraries] = useState([]);
+  const [showLibrarySwitcher, setShowLibrarySwitcher] = useState(false);
+  const [showAddLibraryModal, setShowAddLibraryModal] = useState(false);
+
+  // New Library Modal inputs
+  const [newLibName, setNewLibName] = useState('');
+  const [newLibAddress, setNewLibAddress] = useState('');
+  const [newLibCity, setNewLibCity] = useState('');
+  const [newLibState, setNewLibState] = useState('');
+  const [newLibShifts, setNewLibShifts] = useState({ Morning: true, Afternoon: false, Evening: false, 'Full day': false });
+  const [newLibShiftTimings, setNewLibShiftTimings] = useState({ Morning: '07:00 – 14:00', Afternoon: '12:00 – 18:00', Evening: '14:00 – 21:00', 'Full day': '07:00 – 21:00' });
+  const [newLibWorkingDays, setNewLibWorkingDays] = useState({ Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true, Saturday: true, Sunday: true });
+  const [newLibTotalSeats, setNewLibTotalSeats] = useState(60);
+  const [newLibFeeAmount, setNewLibFeeAmount] = useState(800);
+  const [newLibDueDay, setNewLibDueDay] = useState(5);
+
+  // Intercept query parameters (token/role) on tab-switching/auth redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('token');
+    const urlRole = params.get('role');
+    if (urlToken && urlRole) {
+      localStorage.setItem('token', urlToken);
+      localStorage.setItem('role', urlRole);
+      // Clean URL parameters
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+      
+      showToast('Logged in successfully.');
+      if (urlRole === 'STUDENT') {
+        navigate('/student');
+      } else {
+        navigate('/dashboard');
+      }
+    }
+  }, [navigate]);
+
   // Initialize seats once on mount
   useEffect(() => {
     fetchSeats();
-
-    // Load Razorpay script dynamically
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.body.appendChild(script);
-    return () => {
-      document.body.removeChild(script);
-    };
   }, []);
 
   useEffect(() => {
@@ -327,6 +435,7 @@ export default function App() {
 
         fetchDashboardData();
         fetchSettingsData();
+        fetchOwnerLibraries();
       }
     } else if (location.pathname === '/student') {
       fetchStudentDashboard();
@@ -410,6 +519,79 @@ export default function App() {
   // --- Stats variables ---
   const occupiedCount = fullSeats.filter(s => s.status === 'occupied' || s.status === 'due').length;
   const feesDueSum = fullSeats.filter(s => s.status === 'due').length * 800; // Mock calculation based on due count
+
+  const fetchOwnerLibraries = () => {
+    const role = localStorage.getItem('role');
+    if (role === 'OWNER') {
+      api.ownerApi.getLibraries()
+        .then(res => {
+          if (res.status === 'success' || res.success) {
+            setOwnerLibraries(res.data || []);
+          }
+        })
+        .catch(err => console.error("Error fetching owner libraries:", err));
+    }
+  };
+
+  const handleSwitchLibrary = (libraryId) => {
+    api.ownerApi.switchLibrary(libraryId)
+      .then(res => {
+        if (res.status === 'success' || res.success) {
+          const data = res.data;
+          window.open(window.location.origin + '?token=' + encodeURIComponent(data.token) + '&role=' + data.role, '_blank');
+        } else {
+          showToast(res.message || '❌ Failed to switch library.');
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('❌ Error switching library.');
+      });
+  };
+
+  const handleAddLibrarySubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!newLibName || !newLibCity || !newLibAddress) {
+      showToast('❌ Please fill in the required fields.');
+      return;
+    }
+
+    const payload = {
+      libraryName: newLibName,
+      city: newLibCity,
+      state: newLibState,
+      address: newLibAddress,
+      shifts: Object.keys(newLibShifts).filter(k => newLibShifts[k]).map(k => `${k} (${newLibShiftTimings[k]})`).join(','),
+      workingDays: Object.keys(newLibWorkingDays).filter(d => newLibWorkingDays[d]).join(','),
+      totalSeats: newLibTotalSeats,
+      monthlyFee: newLibFeeAmount,
+      dueDay: newLibDueDay,
+      paymentMethods: 'Cash,UPI',
+      isFreeTrial: false,
+      planId: 0
+    };
+
+    api.ownerApi.addLibrary(payload)
+      .then(res => {
+        if (res.status === 'success' || res.success) {
+          showToast('✅ New library added successfully!');
+          setShowAddLibraryModal(false);
+          // Clear inputs
+          setNewLibName('');
+          setNewLibAddress('');
+          setNewLibCity('');
+          setNewLibState('');
+          // Refresh libraries list
+          fetchOwnerLibraries();
+        } else {
+          showToast(res.message || '❌ Failed to add library.');
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('❌ Error adding library.');
+      });
+  };
 
   const fetchDashboardData = () => {
     const token = localStorage.getItem('token');
@@ -897,78 +1079,63 @@ export default function App() {
           return;
         }
 
-        // Load Razorpay script if not already loaded
-        const loadRazorpay = () => new Promise((resolve) => {
-          if (window.Razorpay) { resolve(true); return; }
-          const script = document.createElement('script');
-          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          script.onload = () => resolve(true);
-          script.onerror = () => resolve(false);
-          document.body.appendChild(script);
-        });
+        const options = {
+          key: orderData.keyId,
+          amount: orderData.amount,
+          currency: orderData.currency || 'INR',
+          name: 'StudySpace Library',
+          description: `Fee for ${selectedFeeForPayment.month}/${selectedFeeForPayment.year}`,
+          order_id: orderData.orderId,
+          prefill: {},
+          theme: { color: '#6366f1' },
 
-        loadRazorpay().then(loaded => {
-          if (!loaded) {
-            showToast('❌ Razorpay SDK failed to load. Check your internet connection.');
-            return;
-          }
-
-          const options = {
-            key: orderData.keyId,
-            amount: orderData.amount,
-            currency: orderData.currency || 'INR',
-            name: 'StudySpace Library',
-            description: `Fee for ${selectedFeeForPayment.month}/${selectedFeeForPayment.year}`,
-            order_id: orderData.orderId,
-            prefill: {},
-            theme: { color: '#6366f1' },
-
-            // ✅ SUCCESS: signature received → verify on backend → mark PAID
-            handler: function (response) {
-              api.feeApi.razorpayVerify({
-                razorpayOrderId: response.razorpay_order_id,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-                feeId: String(selectedFeeForPayment.id),
-                paymentMode: 'RAZORPAY',
-                paidAmount: String(selectedFeeForPayment.dueAmount)
-              }).then(res => {
-                if (res.status === 'success' || res.success) {
-                  showToast('✅ Payment successful! Fee marked as paid.');
-                  setSelectedFeeForPayment(null);
-                  const role = localStorage.getItem('role');
-                  if (role === 'STUDENT') {
-                    fetchStudentDashboard();
-                  } else {
-                    fetchFeeData();
-                  }
-                } else {
-                  showToast('⚠️ Payment received but verification failed. Please contact support.');
-                }
-              }).catch(() => {
-                showToast('⚠️ Verification error. Please contact support.');
-              });
-            },
-
-            // ❌ DISMISSED / GO BACK: do NOT collect fee
-            modal: {
-              ondismiss: function () {
-                showToast('🚫 Payment cancelled. No fees were collected.');
+          // ✅ SUCCESS: signature received → verify on backend → mark PAID
+          handler: function (response) {
+            api.feeApi.razorpayVerify({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              feeId: String(selectedFeeForPayment.id),
+              paymentMode: 'RAZORPAY',
+              paidAmount: String(selectedFeeForPayment.dueAmount)
+            }).then(res => {
+              if (res.status === 'success' || res.success) {
+                showToast('✅ Payment successful! Fee marked as paid.');
                 setSelectedFeeForPayment(null);
+                const role = localStorage.getItem('role');
+                if (role === 'STUDENT') {
+                  fetchStudentDashboard();
+                } else {
+                  fetchFeeData();
+                }
+              } else {
+                showToast('⚠️ Payment received but verification failed. Please contact support.');
               }
+            }).catch(() => {
+              showToast('⚠️ Verification error. Please contact support.');
+            });
+          },
+
+          // ❌ DISMISSED / GO BACK: do NOT collect fee
+          modal: {
+            ondismiss: function () {
+              showToast('🚫 Payment cancelled. No fees were collected.');
+              setSelectedFeeForPayment(null);
             }
-          };
+          }
+        };
 
-          const rzp = new window.Razorpay(options);
-
-          // Also handle payment failure (card declined, etc.)
-          rzp.on('payment.failed', function (response) {
-            showToast(`❌ Payment failed: ${response.error.description || 'Unknown error'}`);
-            setSelectedFeeForPayment(null);
-          });
-
-          rzp.open();
-        });
+        // Load Razorpay SDK lazily — only when user actually pays
+        loadRazorpay()
+          .then(RazorpayClass => {
+            const rzp = new RazorpayClass(options);
+            rzp.on('payment.failed', function (response) {
+              showToast(`❌ Payment failed: ${response.error.description || 'Unknown error'}`);
+              setSelectedFeeForPayment(null);
+            });
+            rzp.open();
+          })
+          .catch(() => showToast('❌ Razorpay SDK failed to load. Check your internet connection.'));
       })
       .catch(err => {
         console.error('Razorpay order creation error:', err);
@@ -1016,6 +1183,7 @@ export default function App() {
     }
     const emailToCheck = loginTab === 'email' ? ownerEmail : ownerMobile;
 
+    setLoginLoading(true);
     fetch(`${API_BASE_URL}/login/all`, {
       method: 'POST',
       headers: {
@@ -1034,6 +1202,7 @@ export default function App() {
           localStorage.setItem('role', loginData.role);
 
           if (loginData.role === 'STUDENT') {
+            setLoginLoading(false);
             navigate('/student');
             showToast('Logged in successfully.');
             return;
@@ -1043,6 +1212,7 @@ export default function App() {
           fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(emailToCheck)}`)
             .then(res => res.json())
             .then(resData => {
+              setLoginLoading(false);
               if (resData.status === 'success') {
                 setIsTrialExpired(resData.data.isExpired);
                 setLibraryName(resData.data.library.name);
@@ -1053,14 +1223,17 @@ export default function App() {
               showToast('Logged in successfully.');
             })
             .catch(err => {
+              setLoginLoading(false);
               console.error("Error verifying trial status:", err);
               navigate('/dashboard');
             });
         } else {
+          setLoginLoading(false);
           showToast(`Login failed: ${loginData.message}`);
         }
       })
       .catch(err => {
+        setLoginLoading(false);
         console.error("Login API error:", err);
         showToast('Failed to connect to login API.');
       });
@@ -1077,11 +1250,13 @@ export default function App() {
       showToast('Please enter a valid email address.');
       return;
     }
+    setForgotPasswordLoading(true);
     fetch(`${API_BASE_URL}/login/getOtp?email=${encodeURIComponent(forgotPasswordEmail)}`, {
       method: 'POST'
     })
       .then(res => res.json())
       .then(resData => {
+        setForgotPasswordLoading(false);
         if (resData.status === 'success') {
           showToast('OTP sent successfully.');
           setForgotPasswordOtpSent(true);
@@ -1092,6 +1267,7 @@ export default function App() {
         }
       })
       .catch(err => {
+        setForgotPasswordLoading(false);
         console.error("Forgot password OTP send error:", err);
         showToast('Failed to connect to server.');
       });
@@ -1103,11 +1279,13 @@ export default function App() {
       showToast('Please enter the OTP.');
       return;
     }
+    setForgotPasswordLoading(true);
     fetch(`${API_BASE_URL}/login/forgot-password-verify?email=${encodeURIComponent(forgotPasswordEmail)}&otp=${encodeURIComponent(forgotPasswordOtpCode)}`, {
       method: 'POST'
     })
       .then(res => res.json())
       .then(resData => {
+        setForgotPasswordLoading(false);
         if (resData.status === 'success') {
           showToast('OTP verified successfully.');
           setRetrievedPassword(resData.password);
@@ -1116,6 +1294,7 @@ export default function App() {
         }
       })
       .catch(err => {
+        setForgotPasswordLoading(false);
         console.error("Forgot password verify error:", err);
         showToast('Failed to connect to server.');
       });
@@ -1132,11 +1311,13 @@ export default function App() {
       showToast('Please enter a valid email address.');
       return;
     }
+    setOtpLoginLoading(true);
     fetch(`${API_BASE_URL}/login/getOtp?email=${encodeURIComponent(otpEmail)}`, {
       method: 'POST'
     })
       .then(res => res.json())
       .then(resData => {
+        setOtpLoginLoading(false);
         if (resData.status === 'success') {
           showToast('OTP sent successfully.');
           setOtpSent(true);
@@ -1150,6 +1331,7 @@ export default function App() {
         }
       })
       .catch(err => {
+        setOtpLoginLoading(false);
         console.error("OTP send error:", err);
         showToast('Failed to connect to server.');
       });
@@ -1161,6 +1343,7 @@ export default function App() {
       showToast('Please enter the OTP.');
       return;
     }
+    setOtpLoginLoading(true);
     fetch(`${API_BASE_URL}/login/verify-otp-login?email=${encodeURIComponent(otpEmail)}&otp=${encodeURIComponent(otpCode)}&rememberMe=${rememberMe}`, {
       method: 'POST'
     })
@@ -1171,6 +1354,7 @@ export default function App() {
           localStorage.setItem('role', loginData.role);
 
           if (loginData.role === 'STUDENT') {
+            setOtpLoginLoading(false);
             navigate('/student');
             showToast('Logged in successfully.');
             return;
@@ -1180,6 +1364,7 @@ export default function App() {
           fetch(`${API_BASE_URL}/signup/status?email=${encodeURIComponent(otpEmail)}`)
             .then(res => res.json())
             .then(resData => {
+              setOtpLoginLoading(false);
               if (resData.status === 'success') {
                 setIsTrialExpired(resData.data.isExpired);
                 setLibraryName(resData.data.library.name);
@@ -1190,14 +1375,17 @@ export default function App() {
               showToast('Logged in successfully.');
             })
             .catch(err => {
+              setOtpLoginLoading(false);
               console.error("Error verifying trial status:", err);
               navigate('/dashboard');
             });
         } else {
+          setOtpLoginLoading(false);
           showToast(loginData.message || 'OTP verification failed.');
         }
       })
       .catch(err => {
+        setOtpLoginLoading(false);
         console.error("OTP Verification error:", err);
         showToast('Failed to verify OTP.');
       });
@@ -1530,8 +1718,12 @@ export default function App() {
             }
           };
 
-          const rzp = new window.Razorpay(options);
-          rzp.open();
+          loadRazorpay()
+            .then(RazorpayClass => {
+              const rzp = new RazorpayClass(options);
+              rzp.open();
+            })
+            .catch(() => showToast('Failed to load payment SDK. Check your internet connection.'));
         } else {
           showToast(`Failed to create order: ${resData.message}`);
         }
@@ -1762,13 +1954,19 @@ export default function App() {
                           )}
 
                           {!retrievedPassword && (
-                            <button type="submit" className="btn btn-primary login-btn">Verify OTP</button>
+                            <button type="submit" className="btn btn-primary login-btn" disabled={forgotPasswordLoading}>
+                              {forgotPasswordLoading && <span className="spinner-btn-loading" />}
+                              Verify OTP
+                            </button>
                           )}
                         </div>
                       )}
 
                       {!forgotPasswordOtpSent && (
-                        <button type="submit" className="btn btn-primary login-btn">Send OTP</button>
+                        <button type="submit" className="btn btn-primary login-btn" disabled={forgotPasswordLoading}>
+                          {forgotPasswordLoading && <span className="spinner-btn-loading" />}
+                          Send OTP
+                        </button>
                       )}
                     </form>
 
@@ -1845,7 +2043,10 @@ export default function App() {
                         </label>
                         <a href="#" onClick={(e) => { e.preventDefault(); navigate('/login?view=forgot'); }}>Forgot password?</a>
                       </div>
-                      <button type="submit" className="btn btn-primary login-btn">Log in</button>
+                      <button type="submit" className="btn btn-primary login-btn" disabled={loginLoading}>
+                        {loginLoading && <span className="spinner-btn-loading" />}
+                        Log in
+                      </button>
                     </form>
 
                     <div className="login-divider">or</div>
@@ -1885,7 +2086,8 @@ export default function App() {
                         )}
                       </div>
 
-                      <button type="submit" className="btn btn-primary login-btn">
+                      <button type="submit" className="btn btn-primary login-btn" disabled={otpLoginLoading}>
+                        {otpLoginLoading && <span className="spinner-btn-loading" />}
                         {otpSent ? 'Verify & Login' : 'Send OTP'}
                       </button>
                     </form>
@@ -2402,6 +2604,116 @@ export default function App() {
                           )}
                         </div>
                         <div className="topbar-actions">
+                          {localStorage.getItem('role') === 'OWNER' && (
+                            <div className="library-switcher-container" style={{ position: 'relative', display: 'inline-block' }}>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => setShowLibrarySwitcher(!showLibrarySwitcher)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  background: 'var(--card)',
+                                  border: '1px solid var(--rule)',
+                                  color: 'var(--ink)'
+                                }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                </svg>
+                                <span>Switch Library</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: showLibrarySwitcher ? 'rotate(180deg)' : 'none' }}>
+                                  <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                              </button>
+                              
+                              {showLibrarySwitcher && (
+                                <div
+                                  className="dropdown-menu"
+                                  style={{
+                                    position: 'absolute',
+                                    right: 0,
+                                    top: '45px',
+                                    zIndex: 1000,
+                                    minWidth: '260px',
+                                    background: 'var(--card)',
+                                    border: '1px solid var(--rule)',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+                                    padding: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '6px'
+                                  }}
+                                >
+                                  <div style={{ padding: '4px 8px', fontSize: '11px', fontWeight: '600', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your Libraries</div>
+                                  <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {ownerLibraries.map((lib) => {
+                                      let activeLibId = null;
+                                      const token = localStorage.getItem('token');
+                                      if (token) {
+                                        try { activeLibId = String(JSON.parse(atob(token.split('.')[1])).schoolId); } catch(e) {}
+                                      }
+                                      const isActive = String(lib.id) === activeLibId;
+                                      return (
+                                        <button
+                                          key={lib.id}
+                                          onClick={() => {
+                                            handleSwitchLibrary(lib.id);
+                                            setShowLibrarySwitcher(false);
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'flex-start',
+                                            width: '100%',
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: isActive ? 'var(--teal-soft)' : 'transparent',
+                                            color: isActive ? 'var(--teal)' : 'var(--ink)',
+                                            textAlign: 'left',
+                                            cursor: 'pointer',
+                                            transition: 'background 0.2s',
+                                            fontFamily: 'inherit'
+                                          }}
+                                        >
+                                          <span style={{ fontWeight: '600', fontSize: '13px' }}>{lib.name}</span>
+                                          <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{lib.city}, {lib.state}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  <div style={{ borderTop: '1px solid var(--rule)', margin: '8px 0' }} />
+                                  <button
+                                    onClick={() => {
+                                      setShowAddLibraryModal(true);
+                                      setShowLibrarySwitcher(false);
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '8px',
+                                      width: '100%',
+                                      padding: '10px',
+                                      borderRadius: '8px',
+                                      border: '1px dashed var(--teal)',
+                                      background: 'transparent',
+                                      color: 'var(--teal)',
+                                      fontWeight: '600',
+                                      fontSize: '13px',
+                                      cursor: 'pointer',
+                                      fontFamily: 'inherit'
+                                    }}
+                                  >
+                                    <span>+ Add New Library</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           <button className="btn btn-ghost" onClick={() => setActiveView('attendance')}>Today's register</button>
                           <button className="btn btn-primary" onClick={() => setAddStudentOpen(true)}>+ Add Student</button>
                         </div>
@@ -3630,9 +3942,13 @@ export default function App() {
                                 prefill: { name: studentDashboardData?.studentName || '' },
                                 theme: { color: '#c0392b' }
                               };
-                              const rzp = new window.Razorpay(options);
-                              rzp.on('payment.failed', (resp) => showToast('Payment failed: ' + resp.error.description));
-                              rzp.open();
+                              loadRazorpay()
+                                .then(RazorpayClass => {
+                                  const rzp = new RazorpayClass(options);
+                                  rzp.on('payment.failed', (resp) => showToast('Payment failed: ' + resp.error.description));
+                                  rzp.open();
+                                })
+                                .catch(() => showToast('Failed to load payment SDK. Check your internet connection.'));
                             }}
                           >
                             {leavingSubmitting ? 'Processing...' : `Pay ₹${leavingPreviewData.finalPendingFee} & Leave`}
@@ -4009,6 +4325,59 @@ export default function App() {
           })
           .filter(Boolean)}
       />
+
+      <AddLibraryModal
+        open={showAddLibraryModal}
+        onClose={() => setShowAddLibraryModal(false)}
+        onSubmit={handleAddLibrarySubmit}
+      />
+
+      {globalLoading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(239, 232, 214, 0.4)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          transition: 'all 0.3s ease'
+        }}>
+          <div style={{
+            background: 'var(--card, #fff)',
+            padding: '30px 40px',
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.08)',
+            border: '1px solid var(--rule, rgba(0,0,0,0.05))',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '15px'
+          }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              border: '3px solid var(--rule, #eae6df)',
+              borderTop: '3px solid var(--teal, #0f766e)',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }} />
+            <div style={{
+              fontSize: '14px',
+              fontWeight: '600',
+              color: 'var(--ink, #1c1917)',
+              fontFamily: 'var(--font-sans, sans-serif)',
+              letterSpacing: '0.02em'
+            }}>Loading, please wait...</div>
+          </div>
+        </div>
+      )}
     </React.Fragment>
   );
 }
